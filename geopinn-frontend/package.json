@@ -1,0 +1,76 @@
+{
+  "name": "geopinn-frontend",
+  "version": "0.0.0",
+  "description": "GeoPINN Studio - Uygulamalı Jeofizik Masaüstü Uygulaması",
+  "type": "module",
+  "main": "main.cjs",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "eslint .",
+    "preview": "vite preview",
+    "predist": "cross-env SERVER_PY_PATH=../geopinn-backend/server.py node scripts/build-backend.cjs",
+    "dist": "npm run build && electron-builder"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.6.1",
+    "@tailwindcss/postcss": "^4.3.2",
+    "@tailwindcss/vite": "^4.3.2",
+    "autoprefixer": "^10.5.2",
+    "lucide-react": "^1.24.0",
+    "plotly.js": "^3.7.0",
+    "plotly.js-gl3d-dist-min": "^3.7.0",
+    "postcss": "^8.5.19",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-plotly.js": "^4.0.0",
+    "recharts": "^3.9.2",
+    "tailwindcss": "^4.3.2",
+    "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.7.0",
+    "cross-env": "^10.1.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8",
+    "eslint": "^10.6.0",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.3",
+    "globals": "^17.7.0",
+    "vite": "^7.3.6"
+  },
+  "build": {
+    "appId": "com.geopinn.studio",
+    "productName": "GeoPINN Studio",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "files": [
+      "main.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": "backend",
+        "to": "backend",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "dist",
+        "to": "frontend-dist",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": ["zip", "dir"],
+      "icon": "build/icon.ico"
+    }
+  }
+}

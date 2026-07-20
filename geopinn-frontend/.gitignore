@@ -1,0 +1,36 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules/
+dist/
+dist-electron/
+build/
+*.exe
+*.asar
+*.pyz
+*.pkg
+*.log
+final_build/
+release/
+backend-dist/
+frontend-dist/
+__pycache__/
+uploads/
+*.npy
+venv/
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
