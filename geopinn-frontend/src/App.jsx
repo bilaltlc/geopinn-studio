@@ -956,7 +956,10 @@ export default function App() {
     setShowSettings(false);
     log('ok', `Backend: ${backendMode === 'colab' ? colabUrl : 'Yerel (localhost:8000)'}`);
   };
-  const [helpTopic, setHelpTopic]=useState('workflow');
+
+  // Yardım modalı
+  const [showHelp,   setShowHelp]   = useState(false);
+  const [helpTopic,  setHelpTopic]  = useState('workflow');
 
   const HELP = {
     workflow: {
