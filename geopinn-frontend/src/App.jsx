@@ -1,845 +1,2163 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
-  Play, Maximize2, Minimize2, Layers, Box, Activity,
-  Waves, Magnet, Radio, SlidersHorizontal, Terminal, Gauge,
-  Database, Upload, Trash2, GitCompare, ChevronDown, ChevronUp, Loader2,
-  Save, History, FolderOpen
+  Layers, Box, Activity, Waves, Magnet, Radio, Gauge, Database, Upload,
+  Trash2, GitCompare, ChevronDown, ChevronUp, Loader2, Save, History,
+  FolderOpen, Download, Filter, Map, BarChart2, Play, Maximize2, Minimize2,
+  Eye, EyeOff, Settings, RefreshCw, AlertCircle, CheckCircle, Info,
+  Grid, Sliders, Mountain, FileText
 } from 'lucide-react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar
 } from 'recharts';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 
+// ─── Renk paleti ─────────────────────────────────────────────────────────────
+const C = {
+  bg:       '#F0F2F5',
+  surface:  '#FFFFFF',
+  border:   '#DDE1E7',
+  header:   '#1B2A4A',
+  accent:   '#E87B2F',
+  accentL:  '#F59E5A',
+  teal:     '#0E7490',
+  tealL:    '#67C2D9',
+  text:     '#1A202C',
+  textMid:  '#4A5568',
+  textLow:  '#718096',
+  ok:       '#2D9B6F',
+  warn:     '#D97706',
+  err:      '#C53030',
+  purple:   '#6B46C1',
+};
+
+// ─── Colormap (Viridis benzeri, jeoloji için) ─────────────────────────────────
+function scalarToColor(t) {
+  const stops = [
+    [0.00, [68,  1, 84]],
+    [0.20, [59, 82,139]],
+    [0.40, [33,145,140]],
+    [0.60, [94,201, 98]],
+    [0.80, [253,231, 37]],
+    [1.00, [255,255,255]],
+  ];
+  let lo = stops[0], hi = stops[stops.length-1];
+  for (let i = 0; i < stops.length-1; i++) {
+    if (t >= stops[i][0] && t <= stops[i+1][0]) { lo=stops[i]; hi=stops[i+1]; break; }
+  }
+  const f = (t - lo[0]) / (hi[0] - lo[0] + 1e-9);
+  return lo[1].map((c,i) => (c + f*(hi[1][i]-c))/255);
+}
+function scalarToCSSColor(t) {
+  const [r,g,b] = scalarToColor(t).map(c => Math.round(c*255));
+  return `rgb(${r},${g},${b})`;
+}
+
+// ─── Yardımcılar ──────────────────────────────────────────────────────────────
+function percentile(arr, p) {
+  if (!arr.length) return 0;
+  const sorted = [...arr].sort((a,b)=>a-b);
+  return sorted[Math.min(sorted.length-1, Math.floor(sorted.length*p))];
+}
+
 function trilinearUpsample(data, factor) {
-  const n = data.length;
-  const m = n * factor;
-  const out = [];
-  for (let i = 0; i < m; i++) {
-    const gi = i / factor;
-    const i0 = Math.min(Math.floor(gi), n - 1);
-    const i1 = Math.min(i0 + 1, n - 1);
-    const fi = gi - i0;
+  const n = data.length, m = n*factor, out = [];
+  for (let i=0;i<m;i++) {
+    const gi=i/factor, i0=Math.min(Math.floor(gi),n-1), i1=Math.min(i0+1,n-1), fi=gi-i0;
     out.push([]);
-    for (let j = 0; j < m; j++) {
-      const gj = j / factor;
-      const j0 = Math.min(Math.floor(gj), n - 1);
-      const j1 = Math.min(j0 + 1, n - 1);
-      const fj = gj - j0;
+    for (let j=0;j<m;j++) {
+      const gj=j/factor, j0=Math.min(Math.floor(gj),n-1), j1=Math.min(j0+1,n-1), fj=gj-j0;
       out[i].push([]);
-      for (let k = 0; k < m; k++) {
-        const gk = k / factor;
-        const k0 = Math.min(Math.floor(gk), n - 1);
-        const k1 = Math.min(k0 + 1, n - 1);
-        const fk = gk - k0;
-        const c000 = data[i0][j0][k0], c100 = data[i1][j0][k0];
-        const c010 = data[i0][j1][k0], c110 = data[i1][j1][k0];
-        const c001 = data[i0][j0][k1], c101 = data[i1][j0][k1];
-        const c011 = data[i0][j1][k1], c111 = data[i1][j1][k1];
-        const c00 = c000 * (1 - fi) + c100 * fi;
-        const c10 = c010 * (1 - fi) + c110 * fi;
-        const c01 = c001 * (1 - fi) + c101 * fi;
-        const c11 = c011 * (1 - fi) + c111 * fi;
-        const c0 = c00 * (1 - fj) + c10 * fj;
-        const c1 = c01 * (1 - fj) + c11 * fj;
-        out[i][j].push(c0 * (1 - fk) + c1 * fk);
+      for (let k=0;k<m;k++) {
+        const gk=k/factor, k0=Math.min(Math.floor(gk),n-1), k1=Math.min(k0+1,n-1), fk=gk-k0;
+        const c000=data[i0][j0][k0],c100=data[i1][j0][k0],c010=data[i0][j1][k0],c110=data[i1][j1][k0];
+        const c001=data[i0][j0][k1],c101=data[i1][j0][k1],c011=data[i0][j1][k1],c111=data[i1][j1][k1];
+        const c00=c000*(1-fi)+c100*fi, c10=c010*(1-fi)+c110*fi;
+        const c01=c001*(1-fi)+c101*fi, c11=c011*(1-fi)+c111*fi;
+        const c0=c00*(1-fj)+c10*fj, c1=c01*(1-fj)+c11*fj;
+        out[i][j].push(c0*(1-fk)+c1*fk);
       }
     }
   }
   return out;
 }
 
-function percentile(sortedArr, p) {
-  if (!sortedArr.length) return 0;
-  const idx = Math.min(sortedArr.length - 1, Math.max(0, Math.floor(sortedArr.length * p)));
-  return sortedArr[idx];
+// ─── UI bileşenleri ───────────────────────────────────────────────────────────
+function PanelSection({ title, icon: Icon, children, defaultOpen = true, badge }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: `1px solid ${C.border}` }}>
+      <button onClick={() => setOpen(o=>!o)}
+        style={{ width:'100%', display:'flex', alignItems:'center', gap:6, padding:'8px 12px',
+                 background:'none', border:'none', cursor:'pointer', color: C.header,
+                 fontSize:11, fontWeight:700, letterSpacing:'0.06em', textTransform:'uppercase' }}>
+        {Icon && <Icon size={12} />}
+        <span style={{ flex:1, textAlign:'left' }}>{title}</span>
+        {badge && (
+          <span style={{ background: C.accent, color:'#fff', borderRadius:10,
+                         padding:'1px 6px', fontSize:9, fontWeight:700 }}>{badge}</span>
+        )}
+        {open ? <ChevronUp size={12}/> : <ChevronDown size={12}/>}
+      </button>
+      {open && <div style={{ padding:'0 12px 12px' }}>{children}</div>}
+    </div>
+  );
 }
 
-function IsosurfaceMesh({ modelData, targetFraction = 0.28 }) {
-  const resolution = 32;
+function MetricCard({ label, value, unit, icon: Icon, color = C.teal, delta }) {
+  return (
+    <div style={{ background: C.surface, border:`1px solid ${C.border}`, borderRadius:6,
+                  padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
+      <div style={{ width:32, height:32, borderRadius:8, background:`${color}18`,
+                    display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+        {Icon && <Icon size={16} color={color} />}
+      </div>
+      <div style={{ flex:1, minWidth:0 }}>
+        <div style={{ fontSize:10, color: C.textLow, textTransform:'uppercase', letterSpacing:'0.05em' }}>{label}</div>
+        <div style={{ fontSize:18, fontWeight:700, color: C.text, fontFamily:'monospace', lineHeight:1.2 }}>
+          {value}<span style={{ fontSize:10, color: C.textMid, marginLeft:3, fontFamily:'inherit' }}>{unit}</span>
+        </div>
+        {delta !== undefined && (
+          <div style={{ fontSize:9, color: delta >= 0 ? C.ok : C.err, marginTop:1 }}>
+            {delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(3)}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
-  const effect = useMemo(() => {
-    const material = new THREE.MeshStandardMaterial({
-      color: 0x2dd4bf,
-      roughness: 0.5,
-      metalness: 0.08,
-      flatShading: false,
+function Btn({ children, onClick, disabled, variant = 'primary', size = 'md', icon: Icon, style: extraStyle }) {
+  const base = {
+    display:'flex', alignItems:'center', justifyContent:'center', gap:6,
+    border:'none', cursor: disabled ? 'not-allowed' : 'pointer',
+    fontWeight:600, borderRadius:5, transition:'all 0.15s',
+    opacity: disabled ? 0.5 : 1,
+    fontSize: size === 'sm' ? 11 : 13,
+    padding: size === 'sm' ? '5px 10px' : '8px 16px',
+    ...extraStyle,
+  };
+  const variants = {
+    primary: { background: C.accent, color:'#fff' },
+    secondary: { background: C.surface, color: C.header, border:`1px solid ${C.border}` },
+    danger: { background:'#FEF2F2', color: C.err, border:`1px solid ${C.err}40` },
+    teal: { background: C.teal, color:'#fff' },
+    ghost: { background:'transparent', color: C.textMid, border:`1px solid transparent` },
+  };
+  return (
+    <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant] }}>
+      {Icon && <Icon size={size === 'sm' ? 12 : 14} />}
+      {children}
+    </button>
+  );
+}
+
+function Select({ value, onChange, options, style }) {
+  return (
+    <select value={value} onChange={e => onChange(e.target.value)}
+      style={{ width:'100%', padding:'5px 8px', border:`1px solid ${C.border}`,
+               borderRadius:5, background: C.surface, color: C.text, fontSize:12,
+               fontFamily:'inherit', cursor:'pointer', ...style }}>
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  );
+}
+
+function RangeRow({ label, value, min, max, step = 1, onChange, format = v => v }) {
+  return (
+    <div style={{ marginBottom:8 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:3 }}>
+        <span style={{ fontSize:11, color: C.textMid }}>{label}</span>
+        <span style={{ fontSize:11, fontFamily:'monospace', color: C.teal, fontWeight:700 }}>{format(value)}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(parseFloat(e.target.value))}
+        style={{ width:'100%', accentColor: C.teal }} />
+    </div>
+  );
+}
+
+function Tag({ children, color = C.teal }) {
+  return (
+    <span style={{ background:`${color}18`, color, border:`1px solid ${color}40`,
+                   borderRadius:4, padding:'2px 7px', fontSize:10, fontWeight:600 }}>
+      {children}
+    </span>
+  );
+}
+
+// ─── Colorbar bileşeni ────────────────────────────────────────────────────────
+function ColorBar({ vmin = 0, vmax = 1, label = 'Değer', horizontal = false }) {
+  const stops = [0,0.2,0.4,0.6,0.8,1].map(t => `${scalarToCSSColor(t)} ${t*100}%`).join(',');
+  const grad = horizontal
+    ? `linear-gradient(to right, ${stops})`
+    : `linear-gradient(to top, ${stops})`;
+  return (
+    <div style={{ position:'absolute', bottom:16, right:16, zIndex:20,
+                  display:'flex', flexDirection:'column', alignItems:'center', gap:4,
+                  background:'rgba(255,255,255,0.92)', border:`1px solid ${C.border}`,
+                  borderRadius:6, padding:'8px 10px', boxShadow:'0 2px 8px rgba(0,0,0,0.12)' }}>
+      <span style={{ fontSize:9, color: C.textMid, textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:700 }}>{label}</span>
+      <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
+        <div style={{ display:'flex', flexDirection:'column', justifyContent:'space-between',
+                      fontSize:9, fontFamily:'monospace', color: C.textMid, textAlign:'right' }}>
+          <span>{vmax.toFixed(3)}</span>
+          <span>{((vmin+vmax)/2).toFixed(3)}</span>
+          <span>{vmin.toFixed(3)}</span>
+        </div>
+        <div style={{ width:14, height:100, background:grad, borderRadius:3,
+                      border:`1px solid ${C.border}` }} />
+      </div>
+    </div>
+  );
+}
+
+// ─── 3D Izoyüzey ─────────────────────────────────────────────────────────────
+function IsosurfaceMesh({ modelData, isoThreshold, opacity }) {
+  const res = 32;
+  const { mc } = useMemo(() => {
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors:true, roughness:0.35, metalness:0.08,
+      transparent: opacity < 1, opacity,
     });
-    const mc = new MarchingCubes(resolution, material, false, false, 100000);
-    mc.scale.set(8, 8, 8);
-    return mc;
+    const mc = new MarchingCubes(res, mat, true, true, 120000);
+    mc.scale.set(8,8,8);
+    return { mc };
   }, []);
 
+  useEffect(() => { mc.material.opacity = opacity; mc.material.transparent = opacity < 1; },
+    [opacity, mc]);
+
   useEffect(() => {
-    if (!modelData || !modelData.length) return;
-    const factor = Math.max(1, Math.round(resolution / modelData.length));
+    if (!modelData?.length) return;
+    const factor = Math.max(1, Math.round(res / modelData.length));
     const fine = trilinearUpsample(modelData, factor);
-    const n = fine.length;
-    const size = resolution;
-    const field = effect.field;
+    const n = fine.length, sz = res, field = mc.field;
     field.fill(0);
-    const flatVals = [];
-    for (let x = 0; x < size; x++) {
-      const fx = Math.min(Math.floor((x / size) * n), n - 1);
-      for (let y = 0; y < size; y++) {
-        const fy = Math.min(Math.floor((y / size) * n), n - 1);
-        for (let z = 0; z < size; z++) {
-          const fz = Math.min(Math.floor((z / size) * n), n - 1);
-          const v = fine[fx][fy][fz];
-          field[x + y * size + z * size * size] = v;
-          flatVals.push(v);
+    const flat = [];
+    for (let x=0;x<sz;x++) {
+      const fx=Math.min(Math.floor(x/sz*n),n-1);
+      for (let y=0;y<sz;y++) {
+        const fy=Math.min(Math.floor(y/sz*n),n-1);
+        for (let z=0;z<sz;z++) {
+          const fz=Math.min(Math.floor(z/sz*n),n-1);
+          const v=fine[fx][fy][fz];
+          field[x+y*sz+z*sz*sz]=v; flat.push(v);
         }
       }
     }
-    // Sabit bir eşik (örn. 0.15) yalnızca sentetik demo verisinin ölçeğine uyuyordu.
-    // Gerçek veri setleri çok farklı değer aralıklarına sahip olabiliyor; eşik veri
-    // dağılımının ortasına denk gelirse marching cubes her hücrede içeri/dışarı
-    // savrulup "süngerimsi/delikli" bir yüzey üretiyordu. Bunun yerine eşiği,
-    // hacmin yaklaşık targetFraction kadarını kapsayacak şekilde veriden hesaplıyoruz.
-    flatVals.sort((a, b) => a - b);
-    effect.isolation = percentile(flatVals, 1 - targetFraction);
-    effect.update();
-  }, [modelData, effect, targetFraction]);
+    const vmin=percentile(flat,0.02), vmax=percentile(flat,0.98);
+    mc.isolation = percentile(flat, 1-isoThreshold);
+    mc.update();
+    const geo=mc.geometry;
+    if (geo?.attributes?.position) {
+      const pos=geo.attributes.position, cnt=pos.count;
+      const cols=new Float32Array(cnt*3);
+      for (let i=0;i<cnt;i++) {
+        const gx=Math.min(sz-1,Math.max(0,Math.round(((pos.getX(i)/8)*0.5+0.5)*sz)));
+        const gy=Math.min(sz-1,Math.max(0,Math.round(((pos.getY(i)/8)*0.5+0.5)*sz)));
+        const gz=Math.min(sz-1,Math.max(0,Math.round(((pos.getZ(i)/8)*0.5+0.5)*sz)));
+        const v=field[gx+gy*sz+gz*sz*sz];
+        const t=Math.max(0,Math.min(1,(v-vmin)/(vmax-vmin+1e-9)));
+        const [r,g,b]=scalarToColor(t);
+        cols[i*3]=r; cols[i*3+1]=g; cols[i*3+2]=b;
+      }
+      geo.setAttribute('color',new THREE.BufferAttribute(cols,3));
+    }
+  }, [modelData, mc, isoThreshold]);
 
-  return <primitive object={effect} />;
+  return <primitive object={mc}/>;
 }
 
-function VoxelScene({ modelData }) {
+// Topografik düzlem
+function TopographyPlane({ show, opacity = 0.6 }) {
+  if (!show) return null;
+  const geo = useMemo(() => {
+    const g = new THREE.PlaneGeometry(16, 16, 31, 31);
+    const pos = g.attributes.position;
+    for (let i=0;i<pos.count;i++) {
+      const x=pos.getX(i)/8, y=pos.getY(i)/8;
+      const h = 0.5*Math.sin(x*3)*Math.cos(y*2) + 0.3*Math.cos(x*5+y*3);
+      pos.setZ(i, h*1.5);
+    }
+    g.computeVertexNormals();
+    return g;
+  }, []);
+
   return (
-    <Canvas camera={{ position: [22, 18, 22], fov: 45 }}>
-      <ambientLight intensity={0.75} />
-      <directionalLight position={[15, 20, 10]} intensity={1.1} />
-      <directionalLight position={[-15, -10, -10]} intensity={0.35} />
-      <IsosurfaceMesh modelData={modelData} />
-      <OrbitControls makeDefault enableDamping dampingFactor={0.08} />
-      <gridHelper args={[40, 20, '#94a3b8', '#334155']} position={[0, -12, 0]} />
+    <mesh geometry={geo} position={[0, 12, 0]} rotation={[-Math.PI/2, 0, 0]}>
+      <meshStandardMaterial color="#5B7A4E" transparent opacity={opacity}
+        wireframe={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+function Scene3D({ modelData, isoThreshold, opacity, showTopo, topoOpacity, bgColor }) {
+  return (
+    <Canvas camera={{ position:[22,18,22], fov:45 }}
+      style={{ background: bgColor === 'dark' ? '#0F172A' : '#EFF6FF' }}>
+      <ambientLight intensity={0.9} />
+      <directionalLight position={[15,20,10]} intensity={1.3} castShadow />
+      <directionalLight position={[-15,-10,-10]} intensity={0.4} />
+      <pointLight position={[0,25,0]} intensity={0.3} color="#E0F2FE" />
+      {modelData?.length > 0 && (
+        <IsosurfaceMesh modelData={modelData} isoThreshold={isoThreshold} opacity={opacity} />
+      )}
+      <TopographyPlane show={showTopo} opacity={topoOpacity} />
+      <OrbitControls makeDefault enableDamping dampingFactor={0.06} />
+      <gridHelper args={[40,20, bgColor==='dark'?'#1E293B':'#CBD5E1', bgColor==='dark'?'#0F172A':'#E2E8F0']}
+        position={[0,-12,0]} />
+      {/* Eksen göstergesi */}
+      <axesHelper args={[6]} position={[-9,-11,-9]} />
     </Canvas>
   );
 }
 
-const API_BASE = "http://127.0.0.1:8000";
+// ─── Slice View ───────────────────────────────────────────────────────────────
+function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
+  const containerRef=useRef(), canvasRef=useRef(), offRef=useRef();
+  const stRef=useRef({ zoom:1, panX:0, panY:0, drag:false, lx:0, ly:0 });
+  const [tip, setTip]=useState(null);
 
-export default function App() {
-  const [modelData, setModelData] = useState(null);
-  const [results, setResults] = useState({});
-  const [metrics, setMetrics] = useState({ mass: 0, volume: 0, heat: 0 });
-  const [settings, setSettings] = useState({
-    grav: true, mag: true, csamt: false, index: 0
-  });
-  const [loading, setLoading] = useState(false);
-  const [logs, setLogs] = useState([
-    { t: '00:00:00', level: 'ok', msg: 'Sistem hazır. Veri yolu tanımlı.' }
-  ]);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const viewerRef = useRef(null);
-
-  const [datasets, setDatasets] = useState([]);
-  const [selectedDataset, setSelectedDataset] = useState(null);
-  const [uploading, setUploading] = useState(false);
-  const fileInputRef = useRef(null);
-
-  const [jiOpen, setJiOpen] = useState(false);
-  const [jiRunning, setJiRunning] = useState(false);
-  const [jiWeights, setJiWeights] = useState({ grav: 1.0, mag: 1.0, csamt: 1.0 });
-  const [jiIter, setJiIter] = useState(24);
-  const [jiHistory, setJiHistory] = useState([]);
-  const [jiCorrelation, setJiCorrelation] = useState({});
-  const [jiSummary, setJiSummary] = useState(null);
-
-  const [lastRunType, setLastRunType] = useState(null); // 'physics' | 'joint' | null
-  const [historyOpen, setHistoryOpen] = useState(false);
-  const [savedAnalyses, setSavedAnalyses] = useState([]);
-  const [saving, setSaving] = useState(false);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  const layerConfig = [
-    { key: 'grav', label: 'Gravite', sub: 'Bouguer anomali', icon: Gauge },
-    { key: 'mag', label: 'Manyetik', sub: 'Toplam alan', icon: Magnet },
-    { key: 'csamt', label: 'CSAMT', sub: 'Direnç / faz', icon: Radio },
-  ];
-
-  const corrLabels = {
-    grav_mag: 'Gravite ↔ Manyetik',
-    grav_csamt: 'Gravite ↔ CSAMT',
-    mag_csamt: 'Manyetik ↔ CSAMT',
-  };
-
-  const timestamp = () => new Date().toLocaleTimeString('tr-TR', { hour12: false });
-
-  const pushLog = (level, msg) => {
-    setLogs(prev => [{ t: timestamp(), level, msg }, ...prev].slice(0, 200));
-  };
-
-  const fetchDatasets = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/data/list`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setDatasets(data.files || []);
-    } catch (e) {
-      pushLog('err', `Veri seti listesi alınamadı: ${e.message}`);
-    }
-  };
-
-  const checkBackendHealth = async () => {
-    try {
-      const res = await fetch(`${API_BASE}/api/health`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      pushLog('ok', `Backend bağlantısı kuruldu (v${data.version}).`);
-    } catch (e) {
-      pushLog('err', `Backend'e ulaşılamadı: ${e.message}. Sunucu çalışıyor mu kontrol edin.`);
-    }
-  };
-
-  // Uygulama açılışında backend sağlık kontrolü — önceden burada tanımlıydı
-  // ama hiçbir yerden çağrılmıyordu, bu yüzden bağlantı hataları startup'ta
-  // fark edilmiyordu.
-  useEffect(() => { checkBackendHealth(); }, []);
-
-  useEffect(() => { fetchDatasets(); }, []);
-
-  const fetchAnalyses = async () => {
-    setLoadingHistory(true);
-    try {
-      const res = await fetch(`${API_BASE}/api/analyses`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      setSavedAnalyses(data.analyses || []);
-    } catch (e) {
-      pushLog('err', `Geçmiş analizler alınamadı: ${e.message}`);
-    } finally {
-      setLoadingHistory(false);
-    }
-  };
-
-  useEffect(() => { fetchAnalyses(); }, []);
-
-  const handleUploadClick = () => fileInputRef.current?.click();
-
-  const handleUploadChange = async (e) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    if (!file.name.endsWith('.npy')) {
-      pushLog('err', 'Sadece .npy dosyaları yüklenebilir.');
-      return;
-    }
-    setUploading(true);
-    pushLog('info', `Yükleniyor: ${file.name}`);
-    try {
-      const form = new FormData();
-      form.append('file', file);
-      const res = await fetch(`${API_BASE}/api/data/upload`, { method: 'POST', body: form });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+  const render = useCallback(() => {
+    const cv=canvasRef.current, off=offRef.current;
+    if (!cv||!off) return;
+    const {zoom,panX,panY}=stRef.current;
+    const W=cv.width, H=cv.height;
+    const ctx=cv.getContext('2d');
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle='#EFF6FF'; ctx.fillRect(0,0,W,H);
+    const side=off.width*zoom;
+    const x0=(W-side)/2+panX, y0=(H-side)/2+panY;
+    ctx.imageSmoothingEnabled=zoom<3;
+    ctx.drawImage(off,x0,y0,side,side);
+    // ızgara
+    if (zoom>6&&off.width<=64) {
+      const cell=zoom;
+      ctx.strokeStyle='rgba(0,0,0,0.08)'; ctx.lineWidth=0.5;
+      for (let g=((x0%cell)+cell)%cell;g<=W;g+=cell) {
+        ctx.beginPath();ctx.moveTo(g,0);ctx.lineTo(g,H);ctx.stroke();
       }
-      const data = await res.json();
-      pushLog('ok', `Yüklendi: ${data.filename} (${(data.shape || []).join('×')})`);
-      await fetchDatasets();
-      setSelectedDataset(data.filename);
-    } catch (e) {
-      pushLog('err', `Yükleme hatası: ${e.message}`);
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const deleteDataset = async (filename) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/data/${encodeURIComponent(filename)}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      pushLog('ok', `Silindi: ${filename}`);
-      if (selectedDataset === filename) setSelectedDataset(null);
-      await fetchDatasets();
-    } catch (e) {
-      pushLog('err', `Silme hatası: ${e.message}`);
-    }
-  };
-
-  const calculateMetrics = (data) => {
-    const voxelVol = Math.pow(30, 3);
-    let vol = 0, mass = 0, sumVal = 0;
-    data.flat(2).forEach(val => {
-      if (val > 0.1) {
-        vol += voxelVol;
-        mass += (val * 2000 * voxelVol);
-        sumVal += val;
+      for (let g=((y0%cell)+cell)%cell;g<=H;g+=cell) {
+        ctx.beginPath();ctx.moveTo(0,g);ctx.lineTo(W,g);ctx.stroke();
       }
-    });
-    return { volume: vol, mass: mass / 1000, heat: sumVal * 0.05 };
-  };
-
-  const runAnalysis = async () => {
-    setLoading(true);
-    pushLog('info', 'Analiz başlatıldı — fizik motoru çağrılıyor...');
-    try {
-      const response = await fetch(`${API_BASE}/api/run-physics-engine`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grav_active: settings.grav,
-          mag_active: settings.mag,
-          csamt_active: settings.csamt,
-          selected_index: settings.index,
-          dataset: selectedDataset
-        })
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = await response.json();
-      const safeResults = Array.isArray(data.results)
-        ? Object.fromEntries(data.results.map((v, i) => [`ch${i}`, v]))
-        : (data.results || {});
-      setModelData(data.model_data);
-      setResults(safeResults);
-      setMetrics(calculateMetrics(data.model_data));
-      setLastRunType('physics');
-      pushLog('ok', `Analiz tamamlandı (${data.dataset_used}) — ${Object.keys(safeResults).length} kanal döndü.`);
-    } catch (e) {
-      pushLog('err', `HATA: ${e.message}`);
-    } finally {
-      setLoading(false);
     }
-  };
-
-  const runJointInversion = async () => {
-    const activeCount = [settings.grav, settings.mag, settings.csamt].filter(Boolean).length;
-    if (activeCount < 1) {
-      pushLog('err', 'Joint inversion için en az bir katman aktif olmalı.');
-      return;
-    }
-    setJiRunning(true);
-    pushLog('info', `Joint inversion başlatıldı (${jiIter} iterasyon)...`);
-    try {
-      const response = await fetch(`${API_BASE}/api/joint-inversion`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          grav_active: settings.grav,
-          mag_active: settings.mag,
-          csamt_active: settings.csamt,
-          selected_index: settings.index,
-          dataset: selectedDataset,
-          n_iter: jiIter,
-          weights: jiWeights,
-        })
-      });
-      if (!response.ok) {
-        const err = await response.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${response.status}`);
-      }
-      const data = await response.json();
-      setJiHistory(data.history || []);
-      setJiCorrelation(data.correlation || {});
-      setJiSummary({
-        initial: data.initial_misfit,
-        final: data.final_misfit,
-        rmse: data.rmse_vs_true_model,
-        dataset: data.dataset_used,
-      });
-      setModelData(data.model_data);
-      setMetrics(calculateMetrics(data.model_data));
-      setLastRunType('joint');
-      pushLog('ok', `Joint inversion bitti — misfit ${data.initial_misfit?.toFixed(4)} → ${data.final_misfit?.toFixed(4)}`);
-    } catch (e) {
-      pushLog('err', `Joint inversion hatası: ${e.message}`);
-    } finally {
-      setJiRunning(false);
-    }
-  };
-
-  const saveCurrentAnalysis = async () => {
-    if (!lastRunType) {
-      pushLog('err', 'Önce bir analiz çalıştırmalısın.');
-      return;
-    }
-    const defaultName = `${lastRunType === 'joint' ? 'Joint Inversion' : 'Analiz'} — ${new Date().toLocaleString('tr-TR')}`;
-    const name = window.prompt('Analiz için bir isim gir:', defaultName);
-    if (!name) return; // kullanıcı iptal etti
-
-    setSaving(true);
-    try {
-      const payload = {
-        name,
-        type: lastRunType,
-        dataset_used: selectedDataset,
-        settings,
-        results: lastRunType === 'physics' ? results : {},
-        metrics,
-        model_data: modelData,
-        history: lastRunType === 'joint' ? jiHistory : null,
-        correlation: lastRunType === 'joint' ? jiCorrelation : null,
-        summary: lastRunType === 'joint' ? jiSummary : null,
-      };
-      const res = await fetch(`${API_BASE}/api/analyses`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
-      }
-      pushLog('ok', `Analiz kaydedildi: "${name}"`);
-      await fetchAnalyses();
-    } catch (e) {
-      pushLog('err', `Kaydetme hatası: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const loadAnalysis = async (id) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/analyses/${id}`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const record = await res.json();
-
-      if (record.model_data) {
-        setModelData(record.model_data);
-        setMetrics(record.metrics || calculateMetrics(record.model_data));
-      }
-      if (record.type === 'physics') {
-        setResults(record.results || {});
-        setJiHistory([]);
-        setJiCorrelation({});
-        setJiSummary(null);
-      } else if (record.type === 'joint') {
-        setJiHistory(record.history || []);
-        setJiCorrelation(record.correlation || {});
-        setJiSummary(record.summary || null);
-        setJiOpen(true);
-      }
-      if (record.settings) setSettings(record.settings);
-      setLastRunType(record.type);
-      pushLog('ok', `Yüklendi: "${record.name}"`);
-    } catch (e) {
-      pushLog('err', `Analiz yüklenemedi: ${e.message}`);
-    }
-  };
-
-  const deleteAnalysisRecord = async (id, name) => {
-    try {
-      const res = await fetch(`${API_BASE}/api/analyses/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      pushLog('ok', `Silindi: "${name}"`);
-      await fetchAnalyses();
-    } catch (e) {
-      pushLog('err', `Silme hatası: ${e.message}`);
-    }
-  };
+    // Kesit çizgisi
+    ctx.strokeStyle=`${C.accent}`; ctx.lineWidth=1.5; ctx.setLineDash([4,4]);
+    ctx.beginPath();ctx.moveTo(0,H/2);ctx.lineTo(W,H/2);ctx.stroke();
+    ctx.setLineDash([]);
+    // Koordinat göstergesi
+    ctx.fillStyle=C.header; ctx.font='bold 10px monospace';
+    ctx.fillText(`${axis.toUpperCase()} = ${idx}`, 8, 16);
+  }, [axis, idx]);
 
   useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-      requestAnimationFrame(() => {
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 50);
-      });
-    };
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      viewerRef.current?.requestFullscreen();
-    } else {
-      document.exitFullscreen();
+    if (!modelData?.length) return;
+    const n=modelData.length, i=Math.min(idx,n-1);
+    const vmin=colorRange?.min??0, vmax=colorRange?.max??1;
+    const off=document.createElement('canvas');
+    off.width=n; off.height=n;
+    const ctx=off.getContext('2d');
+    const img=ctx.createImageData(n,n);
+    for (let row=0;row<n;row++) {
+      for (let col=0;col<n;col++) {
+        const ri=n-1-row;
+        let v;
+        if (axis==='z')      v=modelData[col]?.[ri]?.[i]??0;
+        else if (axis==='y') v=modelData[col]?.[i]?.[ri]??0;
+        else                 v=modelData[i]?.[col]?.[ri]??0;
+        const t=Math.max(0,Math.min(1,(v-vmin)/(vmax-vmin+1e-9)));
+        const [r,g,b]=scalarToColor(t).map(c=>Math.round(c*255));
+        const px=(row*n+col)*4;
+        img.data[px]=r;img.data[px+1]=g;img.data[px+2]=b;img.data[px+3]=255;
+      }
     }
+    ctx.putImageData(img,0,0);
+    offRef.current=off;
+    const cv=canvasRef.current;
+    const sc=cv?Math.min(cv.width,cv.height)/n:1;
+    stRef.current={zoom:sc,panX:0,panY:0,drag:false,lx:0,ly:0};
+    render();
+  },[modelData,axis,idx,colorRange,render]);
+
+  useEffect(() => {
+    const el=containerRef.current, cv=canvasRef.current;
+    if (!el||!cv) return;
+    const ro=new ResizeObserver(()=>{cv.width=el.clientWidth;cv.height=el.clientHeight;render();});
+    ro.observe(el);
+    return ()=>ro.disconnect();
+  },[render]);
+
+  const onWheel=e=>{
+    e.preventDefault();
+    const s=stRef.current;
+    s.zoom=Math.max(0.5,Math.min(30,s.zoom*(e.deltaY<0?1.15:1/1.15)));
+    render();
+  };
+  const onDown=e=>{const s=stRef.current;s.drag=true;s.lx=e.clientX;s.ly=e.clientY;};
+  const onMove=e=>{
+    const s=stRef.current, cv=canvasRef.current, off=offRef.current;
+    if (s.drag){s.panX+=e.clientX-s.lx;s.panY+=e.clientY-s.ly;s.lx=e.clientX;s.ly=e.clientY;render();}
+    if (!cv||!off) return;
+    const {zoom,panX,panY}=s;
+    const rect=cv.getBoundingClientRect();
+    const mx=(e.clientX-rect.left)*(cv.width/rect.width);
+    const my=(e.clientY-rect.top)*(cv.height/rect.height);
+    const side=off.width*zoom;
+    const x0=(cv.width-side)/2+panX, y0=(cv.height-side)/2+panY;
+    const gx=Math.floor((mx-x0)/zoom), gy=Math.floor((my-y0)/zoom);
+    if (gx>=0&&gx<off.width&&gy>=0&&gy<off.height) {
+      const n=modelData.length, si=Math.min(idx,n-1);
+      const ri=n-1-gy;
+      let v;
+      if (axis==='z') v=modelData[gx]?.[ri]?.[si];
+      else if (axis==='y') v=modelData[gx]?.[si]?.[ri];
+      else v=modelData[si]?.[gx]?.[ri];
+      setTip({x:e.clientX-rect.left,y:e.clientY-rect.top,gx,gy:ri,v:v?.toFixed(4)??'-'});
+    } else setTip(null);
+  };
+  const onUp=()=>{stRef.current.drag=false;};
+  const onDbl=()=>{
+    const cv=canvasRef.current,off=offRef.current;
+    const sc=(cv&&off)?Math.min(cv.width,cv.height)/off.width:1;
+    stRef.current={...stRef.current,zoom:sc,panX:0,panY:0};render();
   };
 
-  const activeLayerCount = layerConfig.filter(l => settings[l.key]).length;
-  const hasModelData = !!(modelData && modelData.length);
+  return (
+    <div ref={containerRef} style={{ width:'100%',height:'100%',position:'relative',
+                                     overflow:'hidden',cursor:'crosshair',background:'#EFF6FF' }}
+      onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove}
+      onMouseUp={onUp} onMouseLeave={onUp} onDoubleClick={onDbl}>
+      <canvas ref={canvasRef} style={{display:'block',width:'100%',height:'100%'}}/>
+      {tip && (
+        <div style={{ position:'absolute', left:tip.x+12, top:tip.y-28, pointerEvents:'none',
+                      background:C.header, color:'#fff', borderRadius:4, padding:'3px 8px',
+                      fontSize:10, fontFamily:'monospace', boxShadow:'0 2px 6px rgba(0,0,0,0.2)' }}>
+          [{tip.gx},{tip.gy}] = {tip.v}
+        </div>
+      )}
+      <div style={{ position:'absolute', bottom:60, left:8, fontSize:9, color: C.textMid,
+                    fontFamily:'monospace', lineHeight:1.6, pointerEvents:'none' }}>
+        <div>Scroll: zoom · Sürükle: pan · Çift tık: sıfırla</div>
+        {sweeping && <div style={{color:C.accent}}>⏩ Animasyon aktif</div>}
+      </div>
+      <ColorBar vmin={colorRange?.min??0} vmax={colorRange?.max??1} label="Cevher [0-1]" />
+    </div>
+  );
+}
 
-
+// ─── REE Anomali haritası (2D canvas) ─────────────────────────────────────────
+function AnomalyMap({ modelData, colorRange }) {
+  const canvasRef=useRef();
+  useEffect(() => {
+    if (!modelData?.length) return;
+    const n=modelData.length;
+    const cv=canvasRef.current;
+    if (!cv) return;
+    cv.width=n; cv.height=n;
+    const ctx=cv.getContext('2d');
+    const img=ctx.createImageData(n,n);
+    const vmin=colorRange?.min??0, vmax=colorRange?.max??1;
+    // Z ekseni boyunca maksimum değer projeksiyon (max intensity projection)
+    for (let row=0;row<n;row++) {
+      for (let col=0;col<n;col++) {
+        let maxV=0;
+        for (let z=0;z<n;z++) maxV=Math.max(maxV,modelData[col]?.[n-1-row]?.[z]??0);
+        const t=Math.max(0,Math.min(1,(maxV-vmin)/(vmax-vmin+1e-9)));
+        const [r,g,b]=scalarToColor(t).map(c=>Math.round(c*255));
+        const px=(row*n+col)*4;
+        img.data[px]=r;img.data[px+1]=g;img.data[px+2]=b;img.data[px+3]=255;
+      }
+    }
+    ctx.putImageData(img,0,0);
+  },[modelData,colorRange]);
 
   return (
-    <div className="flex flex-col h-screen bg-slate-50 text-slate-800 overflow-hidden font-sans">
-      <div className="h-11 flex items-center justify-between px-4 bg-white border-b border-slate-200 shrink-0">
-        <div className="flex items-center gap-2.5">
-          <Box size={16} className="text-teal-600" strokeWidth={2.5} />
-          <span className="text-[13px] font-semibold tracking-wide text-slate-800">GeoPINN</span>
-          <span className="text-[13px] font-mono text-teal-600/80">3.0</span>
-          <span className="ml-2 text-[10px] uppercase tracking-wider text-slate-500 border border-slate-300 rounded px-1.5 py-0.5">Applied Geophysics Suite</span>
-        </div>
-        <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500">
-          <span className={`flex items-center gap-1.5 ${loading || jiRunning ? 'text-amber-600' : 'text-teal-600'}`}>
-            <span className={`w-1.5 h-1.5 rounded-full ${loading || jiRunning ? 'bg-amber-500 animate-pulse' : 'bg-teal-500'}`} />
-            {loading ? 'İşleniyor' : jiRunning ? 'Ters çözüm çalışıyor' : 'Hazır'}
-          </span>
-          <span className="text-slate-300">|</span>
-          <span>{activeLayerCount} katman aktif</span>
-          <span className="text-slate-300">|</span>
-          <span>{selectedDataset || 'demo/sentetik'}</span>
-        </div>
+    <div style={{position:'relative',width:'100%',height:'100%',background:'#EFF6FF',
+                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16}}>
+      <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:8,
+                   textTransform:'uppercase',letterSpacing:'0.06em'}}>
+        REE Anomali Haritası — Max Intensity Projeksiyon (Z)
+      </div>
+      <canvas ref={canvasRef} style={{imageRendering:'pixelated',maxWidth:'85%',maxHeight:'75%',
+                                      aspectRatio:'1',border:`2px solid ${C.border}`,borderRadius:4,
+                                      boxShadow:'0 2px 12px rgba(0,0,0,0.1)'}}/>
+      <div style={{marginTop:8,fontSize:9,color:C.textMid,fontFamily:'monospace'}}>
+        Enlem (Y) · Boylam (X) — 480m × 480m domain
+      </div>
+      <ColorBar vmin={colorRange?.min??0} vmax={colorRange?.max??1} label="Maks. Cevher" />
+    </div>
+  );
+}
+
+// ─── İstatistik paneli ────────────────────────────────────────────────────────
+function StatsPanel({ modelData, colorRange, jiHistory, jiCorrelation, jiSummary }) {
+  const stats = useMemo(() => {
+    if (!modelData?.length) return null;
+    const flat=modelData.flat(2);
+    const n=flat.length;
+    const mean=flat.reduce((a,b)=>a+b,0)/n;
+    const std=Math.sqrt(flat.reduce((a,b)=>a+(b-mean)**2,0)/n);
+    const above50=flat.filter(v=>v>0.5).length;
+    const above30=flat.filter(v=>v>0.3).length;
+    const sorted=[...flat].sort((a,b)=>a-b);
+    const p10=sorted[Math.floor(n*0.1)], p50=sorted[Math.floor(n*0.5)], p90=sorted[Math.floor(n*0.9)];
+    // Histogram
+    const bins=20, binW=(colorRange.max-colorRange.min)/bins;
+    const hist=Array(bins).fill(0);
+    flat.forEach(v=>{const b=Math.min(bins-1,Math.floor((v-colorRange.min)/binW));if(b>=0)hist[b]++;});
+    const histData=hist.map((c,i)=>({bin:`${(colorRange.min+i*binW).toFixed(2)}`, count:c}));
+    return { mean, std, above50, above30, p10, p50, p90, histData, n };
+  }, [modelData, colorRange]);
+
+  if (!stats) return (
+    <div style={{padding:24,textAlign:'center',color:C.textLow,fontSize:13}}>
+      İstatistik için önce bir analiz çalıştırın.
+    </div>
+  );
+
+  return (
+    <div style={{padding:12,overflowY:'auto',height:'100%'}}>
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:12}}>
+        {[
+          {label:'Ortalama', value:stats.mean.toFixed(4), color:C.teal},
+          {label:'Std Sapma', value:stats.std.toFixed(4), color:C.purple},
+          {label:'P10', value:stats.p10?.toFixed(4), color:C.textMid},
+          {label:'P50 (Medyan)', value:stats.p50?.toFixed(4), color:C.accent},
+          {label:'P90', value:stats.p90?.toFixed(4), color:C.err},
+          {label:'>0.5 Hücre', value:`${stats.above50} / ${stats.n}`, color:C.ok},
+        ].map(({label,value,color})=>(
+          <div key={label} style={{background:C.surface,border:`1px solid ${C.border}`,
+                                   borderRadius:6,padding:'8px 10px'}}>
+            <div style={{fontSize:9,color:C.textLow,textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</div>
+            <div style={{fontSize:14,fontWeight:700,fontFamily:'monospace',color}}>{value}</div>
+          </div>
+        ))}
       </div>
 
-      <div className="flex flex-1 min-h-0">
-        <div className="w-72 bg-white border-r border-slate-200 p-4 flex flex-col gap-6 overflow-y-auto">
-          <div>
-            <h2 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2.5 flex items-center gap-1.5">
-              <Layers size={11} /> Veri Katmanları
-            </h2>
-            <div className="space-y-1.5">
-              {layerConfig.map(({ key, label, sub, icon: Icon }) => (
-                <label
-                  key={key}
-                  className={`flex items-center gap-3 p-2.5 rounded-md border cursor-pointer transition-colors ${
-                    settings[key]
-                      ? 'bg-teal-950/30 border-teal-800/50'
-                      : 'bg-slate-100 border-slate-200 hover:border-slate-400'
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={settings[key]}
-                    onChange={(e) => setSettings({ ...settings, [key]: e.target.checked })}
-                    className="accent-teal-500 w-3.5 h-3.5"
-                  />
-                  <Icon size={15} className={settings[key] ? 'text-teal-400' : 'text-slate-600'} />
-                  <div className="flex flex-col leading-tight">
-                    <span className="text-[12.5px] font-medium text-slate-800">{label}</span>
-                    <span className="text-[10.5px] text-slate-500">{sub}</span>
-                  </div>
-                </label>
-              ))}
-            </div>
-          </div>
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:6,
+                     textTransform:'uppercase',letterSpacing:'0.05em'}}>Değer Dağılımı</div>
+        <ResponsiveContainer width="100%" height={120}>
+          <BarChart data={stats.histData} margin={{top:0,right:4,left:-20,bottom:0}}>
+            <XAxis dataKey="bin" tick={{fontSize:8,fill:C.textLow}} interval={4}/>
+            <YAxis tick={{fontSize:8,fill:C.textLow}}/>
+            <Tooltip contentStyle={{fontSize:10,background:C.surface,border:`1px solid ${C.border}`}}/>
+            <Bar dataKey="count" fill={C.teal} radius={[2,2,0,0]}/>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
 
-          <div>
-            <h2 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2.5 flex items-center gap-1.5">
-              <SlidersHorizontal size={11} /> Kesit Parametreleri
-            </h2>
-            <div className="bg-slate-100 border border-slate-200 rounded-md p-3 space-y-1.5">
-              <div className="flex items-baseline justify-between">
-                <span className="text-[11px] text-slate-500">Kesit İndeksi</span>
-                <span className="text-[13px] font-mono text-teal-400">{settings.index}</span>
-              </div>
-              <input
-                type="range" min="0" max="1999" value={settings.index}
-                onChange={(e) => setSettings({ ...settings, index: parseInt(e.target.value) })}
-                className="w-full accent-teal-500"
-              />
-              <div className="flex justify-between text-[9.5px] font-mono text-slate-600">
-                <span>0</span><span>1999</span>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="flex items-center justify-between mb-2.5">
-              <h2 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5">
-                <Database size={11} /> Veri Seti
-              </h2>
-              <button
-                onClick={handleUploadClick}
-                disabled={uploading}
-                className="text-[10px] flex items-center gap-1 text-teal-400 hover:text-teal-300 disabled:text-slate-600"
-              >
-                {uploading ? <Loader2 size={11} className="animate-spin" /> : <Upload size={11} />}
-                Yükle
-              </button>
-              <input ref={fileInputRef} type="file" accept=".npy" className="hidden" onChange={handleUploadChange} />
-            </div>
-            <div className="space-y-1.5">
-              <label
-                className={`flex items-center gap-2.5 p-2 rounded-md border cursor-pointer transition-colors ${
-                  selectedDataset === null
-                    ? 'bg-teal-950/30 border-teal-800/50'
-                    : 'bg-slate-100 border-slate-200 hover:border-slate-400'
-                }`}
-              >
-                <input
-                  type="radio" name="dataset" checked={selectedDataset === null}
-                  onChange={() => setSelectedDataset(null)} className="accent-teal-500 w-3 h-3"
-                />
-                <span className="text-[11.5px] text-slate-700 flex-1">demo / sentetik</span>
-              </label>
-              {datasets.length === 0 && (
-                <p className="text-[10.5px] text-slate-600 px-1">Henüz veri yüklenmedi.</p>
-              )}
-              {datasets.map((ds) => (
-                <div
-                  key={ds.filename}
-                  className={`flex items-center gap-2 p-2 rounded-md border transition-colors ${
-                    selectedDataset === ds.filename
-                      ? 'bg-teal-950/30 border-teal-800/50'
-                      : 'bg-slate-100 border-slate-200 hover:border-slate-400'
-                  }`}
-                >
-                  <label className="flex items-center gap-2.5 flex-1 min-w-0 cursor-pointer">
-                    <input
-                      type="radio" name="dataset" checked={selectedDataset === ds.filename}
-                      onChange={() => setSelectedDataset(ds.filename)} className="accent-teal-500 w-3 h-3 shrink-0"
-                    />
-                    <div className="flex flex-col leading-tight min-w-0">
-                      <span className="text-[11.5px] text-slate-700 truncate">{ds.filename}</span>
-                      <span className="text-[9.5px] font-mono text-slate-600">
-                        {ds.shape ? ds.shape.join('×') : '?'} · {ds.size_kb} KB
-                      </span>
-                    </div>
-                  </label>
-                  <button onClick={() => deleteDataset(ds.filename)} className="text-slate-600 hover:text-rose-400 shrink-0 p-1">
-                    <Trash2 size={13} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <button
-            onClick={runAnalysis}
-            disabled={loading}
-            className="w-full bg-teal-600 hover:bg-teal-500 disabled:bg-slate-700 disabled:cursor-not-allowed transition-colors py-2.5 rounded-md font-semibold text-[13px] flex items-center justify-center gap-2 text-white"
-          >
-            {loading ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                İşleniyor...
-              </>
-            ) : (
-              <>
-                <Play size={14} fill="currentColor" /> Analizi Başlat
-              </>
-            )}
-          </button>
-
-          <button
-            onClick={() => setJiOpen(o => !o)}
-            className={`w-full py-2 rounded-md font-medium text-[12.5px] flex items-center justify-center gap-2 border transition-colors ${
-              jiOpen ? 'bg-indigo-950/40 border-indigo-800/60 text-indigo-300' : 'bg-slate-100 border-slate-200 text-slate-600 hover:border-slate-400'
-            }`}
-          >
-            <GitCompare size={13} /> Joint Inversion Paneli
-            {jiOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-          </button>
-
-          <button
-            onClick={saveCurrentAnalysis}
-            disabled={saving || !lastRunType}
-            className="w-full py-2 rounded-md font-medium text-[12.5px] flex items-center justify-center gap-2 border border-slate-200 bg-slate-100 text-slate-600 hover:border-teal-700/60 hover:text-teal-400 disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:text-slate-600 transition-colors"
-          >
-            {saving ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-            Analizi Kaydet
-          </button>
-
-          <div>
-            <button
-              onClick={() => setHistoryOpen(o => !o)}
-              className={`w-full py-2 rounded-md font-medium text-[12.5px] flex items-center justify-center gap-2 border transition-colors ${
-                historyOpen ? 'bg-teal-950/30 border-teal-800/50 text-teal-300' : 'bg-slate-100 border-slate-200 text-slate-600 hover:border-slate-400'
-              }`}
-            >
-              <History size={13} /> Geçmiş Analizler
-              {historyOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-            </button>
-
-            {historyOpen && (
-              <div className="mt-2 space-y-1.5 max-h-64 overflow-y-auto">
-                {loadingHistory && (
-                  <p className="text-[10.5px] text-slate-600 px-1 flex items-center gap-1.5">
-                    <Loader2 size={11} className="animate-spin" /> Yükleniyor...
-                  </p>
-                )}
-                {!loadingHistory && savedAnalyses.length === 0 && (
-                  <p className="text-[10.5px] text-slate-600 px-1">Henüz kayıtlı analiz yok.</p>
-                )}
-                {savedAnalyses.map((a) => (
-                  <div
-                    key={a.id}
-                    className="flex items-center gap-2 p-2 rounded-md border border-slate-200 bg-slate-100 hover:border-slate-400 transition-colors"
-                  >
-                    <button
-                      onClick={() => loadAnalysis(a.id)}
-                      className="flex items-center gap-2 flex-1 min-w-0 text-left"
-                    >
-                      <FolderOpen size={13} className="text-slate-600 shrink-0" />
-                      <div className="flex flex-col leading-tight min-w-0">
-                        <span className="text-[11.5px] text-slate-700 truncate">{a.name}</span>
-                        <span className="text-[9.5px] font-mono text-slate-600">
-                          {a.type === 'joint' ? 'Joint Inv.' : 'Analiz'} · {a.dataset_used || 'demo'} · {new Date(a.created_at).toLocaleDateString('tr-TR')}
-                        </span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => deleteAnalysisRecord(a.id, a.name)}
-                      className="text-slate-600 hover:text-rose-400 shrink-0 p-1"
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 relative bg-black min-h-0" ref={viewerRef}>
-            <div className="pointer-events-none absolute inset-4 z-10 hidden md:block">
-              <div className="absolute top-0 left-0 w-6 h-6 border-t border-l border-teal-800/40" />
-              <div className="absolute top-0 right-0 w-6 h-6 border-t border-r border-teal-800/40" />
-              <div className="absolute bottom-0 left-0 w-6 h-6 border-b border-l border-teal-800/40" />
-              <div className="absolute bottom-0 right-0 w-6 h-6 border-b border-r border-teal-800/40" />
-            </div>
-            <div className="absolute top-4 left-4 z-20 text-[10px] font-mono text-slate-600 uppercase tracking-wider">
-              İç Yapı Görünümü
-            </div>
-            <button
-              onClick={toggleFullscreen}
-              className="absolute top-4 right-4 z-20 bg-slate-100 border border-slate-300 p-2 rounded-md hover:border-teal-700/60 hover:text-teal-400 transition-colors"
-            >
-              {isFullscreen ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-            {hasModelData ? (
-              <VoxelScene modelData={modelData} />
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-600 gap-4">
-                <Layers size={56} className="opacity-30" strokeWidth={1.2} />
-                <p className="text-[13px] text-slate-500">Henüz model verisi yok — bir analiz çalıştırın.</p>
-              </div>
-            )}
-          </div>
-
-          {jiOpen && (
-            <div className="h-72 bg-white border-t border-slate-200 flex shrink-0 overflow-hidden">
-              <div className="w-64 border-r border-slate-200 p-3.5 flex flex-col gap-3 overflow-y-auto shrink-0">
-                <h3 className="text-[10px] uppercase tracking-wider text-indigo-400 font-bold flex items-center gap-1.5">
-                  <GitCompare size={11} /> Ortak Ters Çözüm (Gradyan/Adam)
-                </h3>
-                {['grav', 'mag', 'csamt'].map((key) => (
-                  <div key={key} className="space-y-1">
-                    <div className="flex items-baseline justify-between">
-                      <span className="text-[10.5px] text-slate-500">{layerConfig.find(l => l.key === key)?.label || key.toUpperCase()} ağırlık</span>
-                      <span className="text-[11px] font-mono text-indigo-400">{jiWeights[key].toFixed(1)}</span>
-                    </div>
-                    <input
-                      type="range" min="0" max="2" step="0.1" value={jiWeights[key]}
-                      onChange={(e) => setJiWeights({ ...jiWeights, [key]: parseFloat(e.target.value) })}
-                      disabled={!settings[key]}
-                      className="w-full accent-indigo-500 disabled:opacity-30"
-                    />
-                  </div>
-                ))}
-                <div className="space-y-1">
-                  <div className="flex items-baseline justify-between">
-                    <span className="text-[10.5px] text-slate-500">İterasyon</span>
-                    <span className="text-[11px] font-mono text-indigo-400">{jiIter}</span>
-                  </div>
-                  <input
-                    type="range" min="6" max="150" step="1" value={jiIter}
-                    onChange={(e) => setJiIter(parseInt(e.target.value))}
-                    className="w-full accent-indigo-500"
-                  />
-                </div>
-                <button
-                  onClick={runJointInversion}
-                  disabled={jiRunning}
-                  className="w-full bg-indigo-600 hover:bg-indigo-500 disabled:bg-slate-700 transition-colors py-2 rounded-md font-semibold text-[12.5px] flex items-center justify-center gap-2 text-white mt-1"
-                >
-                  {jiRunning ? (
-                    <><Loader2 size={13} className="animate-spin" /> Çözülüyor...</>
-                  ) : (
-                    <><Play size={12} fill="currentColor" /> Çalıştır</>
-                  )}
-                </button>
-                {jiSummary && (
-                  <div className="text-[10px] font-mono text-slate-500 space-y-0.5 pt-1 border-t border-slate-200 mt-1">
-                    <div>Misfit: {jiSummary.initial?.toFixed(4)} → <span className="text-teal-400">{jiSummary.final?.toFixed(4)}</span></div>
-                    <div>RMSE: {jiSummary.rmse?.toFixed(4)}</div>
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 p-3.5 min-w-0">
-                <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-1.5">Yakınsama (Misfit)</h3>
-                {jiHistory.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="88%">
-                    <LineChart data={jiHistory} margin={{ top: 4, right: 12, left: -12, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                      <XAxis dataKey="iter" tick={{ fill: '#64748b', fontSize: 10 }} label={{ value: 'iterasyon', position: 'insideBottom', offset: -2, fill: '#475569', fontSize: 10 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 10 }} />
-                      <Tooltip contentStyle={{ background: '#ffffff', border: '1px solid #e2e8f0', fontSize: 11 }} labelStyle={{ color: '#334155' }} />
-                      <Legend wrapperStyle={{ fontSize: 10 }} />
-                      <Line type="monotone" dataKey="misfit" name="Toplam" stroke="#2dd4bf" dot={false} strokeWidth={2} />
-                      {settings.grav && <Line type="monotone" dataKey="misfit_grav" name="Gravite" stroke="#60a5fa" dot={false} strokeWidth={1.3} />}
-                      {settings.mag && <Line type="monotone" dataKey="misfit_mag" name="Manyetik" stroke="#f59e0b" dot={false} strokeWidth={1.3} />}
-                      {settings.csamt && <Line type="monotone" dataKey="misfit_csamt" name="CSAMT" stroke="#f472b6" dot={false} strokeWidth={1.3} />}
-                    </LineChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-[11.5px] text-slate-700">Henüz çalıştırılmadı.</div>
-                )}
-              </div>
-              <div className="w-56 border-l border-slate-200 p-3.5 shrink-0 overflow-y-auto">
-                <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Korelasyon (Pearson)</h3>
-                {Object.keys(jiCorrelation).length > 0 ? (
-                  <table className="w-full text-[11px]">
-                    <tbody>
-                      {Object.entries(jiCorrelation).map(([key, val]) => (
-                        <tr key={key} className="border-b border-slate-200 last:border-0">
-                          <td className="py-1.5 pr-2 text-slate-600">{corrLabels[key] || key}</td>
-                          <td className={`py-1.5 text-right font-mono ${Math.abs(val) > 0.6 ? 'text-teal-400' : Math.abs(val) > 0.3 ? 'text-amber-400' : 'text-slate-500'}`}>
-                            {val.toFixed(3)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-[11px] text-slate-700">Veri yok.</p>
-                )}
-              </div>
+      {jiHistory.length > 0 && (
+        <div style={{marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:6,
+                       textTransform:'uppercase',letterSpacing:'0.05em'}}>Yakınsama</div>
+          <ResponsiveContainer width="100%" height={100}>
+            <AreaChart data={jiHistory} margin={{top:0,right:4,left:-20,bottom:0}}>
+              <defs>
+                <linearGradient id="mGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor={C.teal} stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor={C.teal} stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="iter" tick={{fontSize:8}} hide/>
+              <YAxis tick={{fontSize:8,fill:C.textLow}}/>
+              <Tooltip contentStyle={{fontSize:10}}/>
+              <Area type="monotone" dataKey="misfit" stroke={C.teal} fill="url(#mGrad)" dot={false} strokeWidth={2}/>
+            </AreaChart>
+          </ResponsiveContainer>
+          {jiSummary && (
+            <div style={{display:'flex',gap:8,marginTop:6}}>
+              <Tag color={C.ok}>Misfit {jiSummary.final?.toFixed(4)}</Tag>
+              <Tag color={C.teal}>RMSE {jiSummary.rmse?.toFixed(4)}</Tag>
             </div>
           )}
         </div>
+      )}
 
-        <div className="w-80 bg-white border-l border-slate-200 p-4 flex flex-col gap-5 overflow-hidden">
-          <h2 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5">
-            <Activity size={11} /> Jeofiziksel Özet
-          </h2>
-          <div className="space-y-2">
-            <div className="p-3.5 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-between">
-              <div>
-                <div className="text-slate-500 text-[10.5px] uppercase tracking-wide">Toplam Kütle</div>
-                <div className="text-lg font-mono text-teal-400 mt-0.5">{metrics.mass.toFixed(2)}<span className="text-[11px] text-slate-500 ml-1">Ton</span></div>
+      {Object.keys(jiCorrelation).length > 0 && (
+        <div>
+          <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:6,
+                       textTransform:'uppercase',letterSpacing:'0.05em'}}>Korelasyon (Pearson)</div>
+          {Object.entries(jiCorrelation).map(([k,v])=>(
+            <div key={k} style={{display:'flex',justifyContent:'space-between',alignItems:'center',
+                                  padding:'5px 0',borderBottom:`1px solid ${C.border}`}}>
+              <span style={{fontSize:11,color:C.textMid}}>
+                {k.replace('_',' ↔ ').replace('grav','Grav').replace('mag','Mag').replace('csamt','CSAMT')}
+              </span>
+              <div style={{display:'flex',alignItems:'center',gap:6}}>
+                <div style={{width:50,height:6,background:C.border,borderRadius:3,overflow:'hidden'}}>
+                  <div style={{width:`${Math.abs(v)*100}%`,height:'100%',borderRadius:3,
+                                background:Math.abs(v)>0.6?C.ok:Math.abs(v)>0.3?C.accent:C.textLow}}/>
+                </div>
+                <span style={{fontSize:11,fontFamily:'monospace',fontWeight:700,
+                              color:Math.abs(v)>0.6?C.ok:Math.abs(v)>0.3?C.accent:C.textMid}}>
+                  {v.toFixed(3)}
+                </span>
               </div>
-              <Box size={18} className="text-teal-800" />
             </div>
-            <div className="p-3.5 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-between">
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Geometri Üretici paneli ──────────────────────────────────────────────────
+const GEOM_TYPES = [
+  { id:'beylikova_vein', label:'Hidrotermal Damar', icon:'⛏', color:'#B45309',
+    short:'KB-GD eğimli damar + breş + halo',
+    detail:'Beylikova (Eskişehir) REE-F-Ba-Th yatağı tipi. Karbonatlı kayaçlarda, yüksek yoğunluk+düşük özdirenç.' },
+  { id:'pipe', label:'Borumsu / Pipe', icon:'🔵', color:'#1D4ED8',
+    short:'Düşey silindirik yapı',
+    detail:'Kimberlite (elmas), Cu-Mo porfiri, alkalik sistemler. Gravite+IP odaklı anomali.' },
+  { id:'lens', label:'Mercek / Lens', icon:'🔶', color:'#065F46',
+    short:'Yatay elipsoidal mercek',
+    detail:'SEDEX (Zn-Pb-Ag), VMS (Cu-Zn), tabaka uyumlu Au-Ag. CSAMT derinlik kontrolü.' },
+  { id:'stratabound', label:'Katmana Bağlı', icon:'📐', color:'#7C3AED',
+    short:'Yatay katman, kenarda yoğunlaşma',
+    detail:'Sedimantta Cu-Co, PGE reef, karbonatlarda Zn-Pb. Gravite+mag ayrımı zor.' },
+];
+
+function GeometryPanel({ onGenerated, log }) {
+  const [geomType, setGeomType]=useState('beylikova_vein');
+  const [nbc, setNbc]=useState(32);
+  const [dip, setDip]=useState(60);
+  const [depthTop, setDepthTop]=useState(30);
+  const [depthBot, setDepthBot]=useState(380);
+  const [width, setWidth]=useState(60);
+  const [breccia, setBreccia]=useState(true);
+  const [halo, setHalo]=useState(true);
+  const [loading, setLoading]=useState(false);
+  const [result, setResult]=useState(null);
+
+  const selected = GEOM_TYPES.find(g=>g.id===geomType);
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      // 1) Geometriyi backend'de üret
+      const r = await fetch(`${apiBase}/api/generate-geometry`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({geom_type:geomType, nbc, dip_deg:dip,
+          depth_top_m:depthTop, depth_bot_m:depthBot, width_m:width,
+          add_breccia:breccia, add_halo:halo, seed:42}),
+      });
+      const d = await r.json();
+      setResult(d);
+
+      // 2) Backend'den save-geometry endpoint'iyle .npy olarak kaydet
+      const saveR = await fetch(`${apiBase}/api/save-geometry`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          model_data: d.model_data,
+          filename: `Y_${geomType}_${nbc}x${nbc}x${nbc}.npy`,
+        }),
+      });
+      const saveD = await saveR.json();
+
+      // 3) Üst bileşene bildir — dataset seçimini otomatik yap
+      onGenerated(d, saveD.filename);
+      log('ok', `Geometri üretildi ve kaydedildi: ${saveD.filename} | ${d.stats.active_voxels} aktif voksel`);
+    } catch(e) { log('err', `Geometri hatası: ${e.message}`); }
+    finally { setLoading(false); }
+  };
+
+  return (
+    <div style={{fontSize:12}}>
+      {/* Geometri tipi seçimi */}
+      <div style={{marginBottom:12}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                     letterSpacing:'0.06em',marginBottom:8}}>Prospeksiyon Geometrisi</div>
+        <div style={{display:'flex',flexDirection:'column',gap:5}}>
+          {GEOM_TYPES.map(g=>(
+            <button key={g.id} onClick={()=>setGeomType(g.id)}
+              style={{display:'flex',alignItems:'flex-start',gap:8,padding:'8px 10px',
+                      borderRadius:6,cursor:'pointer',textAlign:'left',
+                      border:`1.5px solid ${geomType===g.id?g.color:C.border}`,
+                      background:geomType===g.id?`${g.color}10`:C.surface,
+                      transition:'all 0.15s'}}>
+              <span style={{fontSize:16,lineHeight:1,flexShrink:0}}>{g.icon}</span>
               <div>
-                <div className="text-slate-500 text-[10.5px] uppercase tracking-wide">Toplam Hacim</div>
-                <div className="text-lg font-mono text-teal-400 mt-0.5">{metrics.volume.toFixed(0)}<span className="text-[11px] text-slate-500 ml-1">m³</span></div>
+                <div style={{fontSize:11,fontWeight:700,color:geomType===g.id?g.color:C.text}}>{g.label}</div>
+                <div style={{fontSize:10,color:C.textLow,marginTop:1}}>{g.short}</div>
               </div>
-              <Layers size={18} className="text-teal-800" />
+            </button>
+          ))}
+        </div>
+        {selected && (
+          <div style={{marginTop:8,padding:'8px 10px',background:`${C.teal}08`,
+                       border:`1px solid ${C.teal}30`,borderRadius:6,
+                       fontSize:10,color:C.textMid,lineHeight:1.6}}>
+            {selected.detail}
+          </div>
+        )}
+      </div>
+
+      {/* Parametreler */}
+      <div style={{borderTop:`1px solid ${C.border}`,paddingTop:10,marginBottom:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                     letterSpacing:'0.06em',marginBottom:8}}>Parametreler</div>
+
+        <div style={{display:'flex',gap:6,marginBottom:8}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:10,color:C.textMid,marginBottom:3}}>Grid çözünürlüğü</div>
+            <select value={nbc} onChange={e=>setNbc(parseInt(e.target.value))}
+              style={{width:'100%',padding:'5px 8px',border:`1px solid ${C.border}`,
+                      borderRadius:5,background:C.surface,color:C.text,fontSize:11}}>
+              <option value={16}>16³ (30m/voksel)</option>
+              <option value={32}>32³ (15m/voksel)</option>
+              <option value={64}>64³ (7.5m/voksel)</option>
+            </select>
+          </div>
+        </div>
+
+        {geomType==='beylikova_vein' && (
+          <RangeRow label="Eğim açısı (dip)" value={dip} min={20} max={90} step={5}
+            onChange={setDip} format={v=>`${Math.round(v)}°`}/>
+        )}
+        <RangeRow label="Üst derinlik" value={depthTop} min={0} max={200} step={10}
+          onChange={setDepthTop} format={v=>`${Math.round(v)} m`}/>
+        <RangeRow label="Alt derinlik" value={depthBot} min={50} max={470} step={10}
+          onChange={setDepthBot} format={v=>`${Math.round(v)} m`}/>
+        <RangeRow label="Genişlik / yarıçap" value={width} min={10} max={150} step={5}
+          onChange={setWidth} format={v=>`${Math.round(v)} m`}/>
+
+        <div style={{display:'flex',gap:12,marginTop:6}}>
+          {[{id:'breccia',label:'Breş zonu',val:breccia,set:setBreccia},
+            {id:'halo',label:'Alterasyon halo',val:halo,set:setHalo}].map(({id,label,val,set})=>(
+            <label key={id} style={{display:'flex',alignItems:'center',gap:5,cursor:'pointer',fontSize:11,color:C.textMid}}>
+              <input type="checkbox" checked={val} onChange={e=>set(e.target.checked)} style={{accentColor:C.teal}}/>
+              {label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      <Btn onClick={generate} disabled={loading} variant="teal" style={{width:'100%',marginBottom:10}}
+        icon={loading?Loader2:Mountain}>
+        {loading?'Üretiliyor...':'Geometri Oluştur'}
+      </Btn>
+
+      {/* Petrofizik değerler */}
+      {result && (
+        <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+          <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:8,
+                       textTransform:'uppercase',letterSpacing:'0.06em'}}>Petrofizik Değerler</div>
+
+          {/* Yoğunluk */}
+          {[
+            {label:'Yoğunluk', host:`${result.petrophys.density_contrast_gcm3.host} g/cm³`,
+             ore:`${result.petrophys.density_contrast_gcm3.ore_max} g/cm³`,
+             formula:result.petrophys.density_contrast_gcm3.formula,
+             note:result.petrophys.density_contrast_gcm3.note, color:C.teal},
+            {label:'Süseptibilite', host:`${result.petrophys.susceptibility_SI.host.toExponential(0)} SI`,
+             ore:`${result.petrophys.susceptibility_SI.ore_max.toExponential(1)} SI`,
+             formula:result.petrophys.susceptibility_SI.formula,
+             note:result.petrophys.susceptibility_SI.note, color:C.accent},
+            {label:'Özdirenç', host:`${result.petrophys.resistivity_ohmm.host} Ω·m`,
+             ore:`${result.petrophys.resistivity_ohmm.ore_min} Ω·m`,
+             formula:result.petrophys.resistivity_ohmm.formula,
+             note:result.petrophys.resistivity_ohmm.note, color:C.purple},
+          ].map(({label,host,ore,formula,note,color})=>(
+            <div key={label} style={{marginBottom:8,padding:'7px 8px',background:C.surface,
+                                     borderRadius:5,border:`1px solid ${color}30`}}>
+              <div style={{fontSize:10,fontWeight:700,color,marginBottom:4}}>{label}</div>
+              <div style={{display:'flex',gap:8,fontSize:10,fontFamily:'monospace'}}>
+                <div><span style={{color:C.textLow}}>Host: </span><span>{host}</span></div>
+                <div><span style={{color:C.textLow}}>Cevher: </span><span style={{color}}>{ore}</span></div>
+              </div>
+              <div style={{fontSize:9,color:C.textLow,marginTop:3,fontFamily:'monospace'}}>{formula}</div>
+              <div style={{fontSize:9,color:C.textLow,marginTop:1,fontStyle:'italic'}}>{note}</div>
             </div>
-            <div className="p-3.5 bg-slate-100 rounded-md border border-slate-200 flex items-center justify-between">
-              <div>
-                <div className="text-slate-500 text-[10.5px] uppercase tracking-wide">Isı İndeksi</div>
-                <div className="text-lg font-mono text-amber-400 mt-0.5">{metrics.heat.toFixed(4)}<span className="text-[11px] text-slate-500 ml-1">W/m²</span></div>
-              </div>
-              <Waves size={18} className="text-amber-900" />
+          ))}
+
+          {/* Model istatistikleri */}
+          <div style={{display:'flex',gap:6,flexWrap:'wrap',marginTop:6}}>
+            <Tag color={C.ok}>Cevher: {(result.stats.ore_fraction*100).toFixed(1)}%</Tag>
+            <Tag color={C.teal}>Halo: {(result.stats.halo_fraction*100).toFixed(1)}%</Tag>
+            <Tag color={C.textMid}>Grid: {result.params.grid}</Tag>
+            <Tag color={C.textMid}>{result.params.voxel_m?.toFixed(1)}m/voksel</Tag>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Filtreleme & Gridleme paneli ──────────────────────────────────────────────
+function FilterPanel({ modelData, onFiltered }) {
+  const [thresh, setThresh]=useState(0.3);
+  const [smooth, setSmooth]=useState(0);
+  const [clampMin, setClampMin]=useState(0);
+  const [clampMax, setClampMax]=useState(1);
+
+  const applyFilter = () => {
+    if (!modelData?.length) return;
+    const filtered=modelData.map(plane=>
+      plane.map(row=>
+        row.map(v=>{
+          let fv=Math.max(clampMin,Math.min(clampMax,v));
+          if (fv<thresh) fv=0;
+          return fv;
+        })
+      )
+    );
+    onFiltered(filtered);
+  };
+
+  return (
+    <div style={{padding:4}}>
+      <RangeRow label="Eşik değeri (threshold)" value={thresh} min={0} max={1} step={0.01}
+        onChange={setThresh} format={v=>v.toFixed(2)}/>
+      <RangeRow label="Kırp alt sınır" value={clampMin} min={0} max={1} step={0.01}
+        onChange={setClampMin} format={v=>v.toFixed(2)}/>
+      <RangeRow label="Kırp üst sınır" value={clampMax} min={0} max={1} step={0.01}
+        onChange={setClampMax} format={v=>v.toFixed(2)}/>
+      <div style={{marginTop:8}}>
+        <Btn onClick={applyFilter} icon={Filter} size="sm" variant="teal" style={{width:'100%'}}>
+          Filtreyi Uygula
+        </Btn>
+      </div>
+      <div style={{marginTop:8,fontSize:10,color:C.textLow,lineHeight:1.5}}>
+        Eşik altı vokseller sıfırlanır. Değişiklikler geçicidir — orijinal veri korunur.
+      </div>
+    </div>
+  );
+}
+
+// ─── Dışa aktarma ─────────────────────────────────────────────────────────────
+function ExportPanel({ modelData, colorRange, logs }) {
+  const exportPNG = () => {
+    if (!modelData?.length) return;
+    const n=modelData.length;
+    const cv=document.createElement('canvas'); cv.width=n; cv.height=n;
+    const ctx=cv.getContext('2d');
+    const img=ctx.createImageData(n,n);
+    const vmin=colorRange.min, vmax=colorRange.max;
+    for (let row=0;row<n;row++)
+      for (let col=0;col<n;col++) {
+        let maxV=0;
+        for (let z=0;z<n;z++) maxV=Math.max(maxV,modelData[col]?.[n-1-row]?.[z]??0);
+        const t=Math.max(0,Math.min(1,(maxV-vmin)/(vmax-vmin+1e-9)));
+        const [r,g,b]=scalarToColor(t).map(c=>Math.round(c*255));
+        const px=(row*n+col)*4;
+        img.data[px]=r;img.data[px+1]=g;img.data[px+2]=b;img.data[px+3]=255;
+      }
+    ctx.putImageData(img,0,0);
+    const a=document.createElement('a'); a.download='geopinn_anomaly.png';
+    a.href=cv.toDataURL(); a.click();
+  };
+
+  const exportCSV = () => {
+    if (!modelData?.length) return;
+    const n=modelData.length;
+    const rows=['x,y,z,value'];
+    for (let x=0;x<n;x++)
+      for (let y=0;y<n;y++)
+        for (let z=0;z<n;z++) {
+          const v=modelData[x]?.[y]?.[z];
+          if (v>0.05) rows.push(`${x},${y},${z},${v.toFixed(6)}`);
+        }
+    const blob=new Blob([rows.join('\n')],{type:'text/csv'});
+    const a=document.createElement('a'); a.download='geopinn_model.csv';
+    a.href=URL.createObjectURL(blob); a.click();
+  };
+
+  const exportLog = () => {
+    const blob=new Blob([logs.map(l=>`${l.t} [${l.level}] ${l.msg}`).join('\n')],{type:'text/plain'});
+    const a=document.createElement('a'); a.download='geopinn_log.txt';
+    a.href=URL.createObjectURL(blob); a.click();
+  };
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:8,padding:4}}>
+      <Btn onClick={exportPNG} icon={Download} variant="secondary" size="sm">
+        Anomali Haritası (PNG)
+      </Btn>
+      <Btn onClick={exportCSV} icon={Download} variant="secondary" size="sm">
+        3D Model Noktaları (CSV)
+      </Btn>
+      <Btn onClick={exportLog} icon={FileText} variant="secondary" size="sm">
+        Log Kaydı (TXT)
+      </Btn>
+      <div style={{fontSize:10,color:C.textLow,marginTop:4,lineHeight:1.5}}>
+        CSV sadece eşik {'>'} 0.05 vokselleri içerir. GeoTIFF için QGIS'e CSV import edin.
+      </div>
+    </div>
+  );
+}
+
+// ─── Ana uygulama ──────────────────────────────────────────────────────────────
+// ── Backend URL — runtime'da belirlenir, build'e bağımlı değil ───────────────
+// Electron: window.electronAPI.getConfig() → {colabUrl, backendMode}
+// Tarayıcı dev modu: localhost fallback
+const _isElectron = typeof window !== 'undefined' && !!window.electronAPI;
+let API_BASE = 'http://127.0.0.1:8000';   // varsayılan, useEffect'te güncellenir
+
+export default function App() {
+  // Veri
+  const [modelData, setModelData]=useState(null);
+  const [filteredData, setFilteredData]=useState(null);
+  const [colorRange, setColorRange]=useState({min:0,max:1});
+  const [metrics, setMetrics]=useState({mass:0,volume:0,heat:0});
+  const [results, setResults]=useState({});
+
+  // Görünüm
+  const [viewMode, setViewMode]=useState('3d'); // '3d' | 'slice' | 'anomaly' | 'stats'
+  const [viewBg, setViewBg]=useState('light');
+  const [isoThreshold, setIsoThreshold]=useState(0.08);
+  const [opacity3d, setOpacity3d]=useState(1.0);
+  const [showTopo, setShowTopo]=useState(false);
+  const [topoOpacity, setTopoOpacity]=useState(0.6);
+  const [sliceAxis, setSliceAxis]=useState('z');
+  const [sliceIdx, setSliceIdx]=useState(8);
+  const [sweeping, setSweeping]=useState(false);
+  const sweepRef=useRef(null);
+
+  // Paneller
+  const [rightTab, setRightTab]=useState('stats');
+  const [leftTab, setLeftTab]=useState('layers');
+
+  // Backend bağlantı yönetimi
+  const [apiBase, setApiBase]           = useState('http://127.0.0.1:8000');
+  const [backendMode, setBackendMode]   = useState('local');  // 'local' | 'colab'
+  const [colabUrl, setColabUrl]         = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [settingsSaved, setSettingsSaved] = useState(false);
+
+  // Electron'dan runtime config oku
+  useEffect(() => {
+    if (window.electronAPI) {
+      window.electronAPI.getConfig().then(cfg => {
+        if (cfg.colabUrl && cfg.backendMode === 'colab') {
+          setApiBase(cfg.colabUrl);
+          setBackendMode('colab');
+          setColabUrl(cfg.colabUrl);
+          API_BASE = cfg.colabUrl;
+        }
+      }).catch(() => {});
+    }
+  }, []);
+
+  const saveSettings = async () => {
+    const newBase = backendMode === 'colab' && colabUrl ? colabUrl : 'http://127.0.0.1:8000';
+    setApiBase(newBase);
+    API_BASE = newBase;
+    if (window.electronAPI) {
+      await window.electronAPI.saveConfig({ colabUrl, backendMode });
+      if (backendMode === 'local') await window.electronAPI.restartBackend();
+    }
+    setSettingsSaved(true);
+    setTimeout(() => setSettingsSaved(false), 2000);
+    setShowSettings(false);
+    log('ok', `Backend: ${backendMode === 'colab' ? colabUrl : 'Yerel (localhost:8000)'}`);
+  };
+  const [helpTopic, setHelpTopic]=useState('workflow');
+
+  const HELP = {
+    workflow: {
+      title: '📋 Önerilen İş Akışı',
+      items: [
+        { label:'① Geometri Oluştur',  color:C.teal,
+          desc:'Sağ panel → Geometri sekmesi → tip seç → parametreleri ayarla → Oluştur\nBeylikova için: Damar, dip=60°, üst=30m, alt=380m, genişlik=60m' },
+        { label:'② Forward Modelling', color:C.accent,
+          desc:'Sol panel → Veri sekmesi → Gravite + Manyetik aktif → Analizi Başlat\nSonuç: Harita sekmesinde anomali haritasını gör' },
+        { label:'③ Ters Çözüm',        color:C.purple,
+          desc:'Hızlı: Sol → Ters Çözüm sekmesi (Grav+Mag+CSAMT birlikte)\nGüvenilir: Sağ → SimPEG sekmesi (adjoint, sadece Grav veya Mag)' },
+        { label:'④ Belirsizlik',        color:C.ok,
+          desc:'Sağ → Belirsizlik sekmesi → 5 realizasyon → Başlat\nCV<0.3 mavi=güvenilir · CV>0.7 sarı=belirsiz' },
+        { label:'⑤ Dışa Aktar',        color:C.textMid,
+          desc:'Sağ → Dışa Aktar → PNG (anomali haritası) + CSV (3D nokta bulutu)' },
+      ]
+    },
+    values: {
+      title: '🎨 Model Değerleri [0–1]',
+      items: [
+        { label:'0.0',     color:'#3B4CB8',
+          desc:'Saf host kaya — granit, kireçtaşı, şist\nGravite anomalisi yok, manyetik anomali yok' },
+        { label:'0.1–0.3', color:'#2D7D52',
+          desc:'Alterasyon halo / zayıf mineralleşme\nDüşük anomali, CSAMT\'ta hafif iletkenlik artışı' },
+        { label:'0.5–0.8', color:'#D97706',
+          desc:'Cevher zonu — yoğun mineralleşme\nBelirgin gravite + manyetik anomali' },
+        { label:'1.0',     color:'#C53030',
+          desc:'Saf cevher — REE-florit-barit damarı\nρ=4.70 g/cm³ · χ=4×10⁻⁴ SI · ρₑ=50 Ω·m' },
+      ]
+    },
+    simpeg: {
+      title: '⚙️ SimPEG Parametreleri',
+      items: [
+        { label:'α_s = 10⁻⁵', color:C.err,
+          desc:'Çok küçük → Detaylı ama gürültülü model' },
+        { label:'α_s = 10⁻⁴', color:C.ok,
+          desc:'✓ Dengeli başlangıç noktası (önerilen)' },
+        { label:'α_s = 10⁻²', color:C.textMid,
+          desc:'Büyük → Çok düzgün, küçük, basit model' },
+        { label:'α_x = 10⁰',  color:C.ok,
+          desc:'✓ Dengeli yumuşaklık (önerilen)' },
+        { label:'16³ grid',    color:C.teal,
+          desc:'Hızlı test (30m/voksel) — ~1-2 dk' },
+        { label:'32³ grid',    color:C.accent,
+          desc:'Sonuç kalitesi (15m/voksel) — ~3-5 dk' },
+      ]
+    },
+    geom: {
+      title: '🗺️ Geometri Tipi Seçimi',
+      items: [
+        { label:'Beylikova Damar', color:'#B45309',
+          desc:'REE-F-Ba-Th, Au-Ag, skarn, hidrotermal\ndip=50-70° · genişlik=40-80m · derinlik=30-450m' },
+        { label:'Pipe / Borumsu', color:'#1D4ED8',
+          desc:'Kimberlite, Cu-Mo porfiri, alkalik Cu-Au\nDüşey silindir, küçük alan, derin' },
+        { label:'Lens / Mercek',  color:'#065F46',
+          desc:'SEDEX (Zn-Pb-Ag), VMS (Cu-Zn), tabaka uyumlu\nYatay, geniş, sığ. CSAMT derinlik kontrolü kritik' },
+        { label:'Stratabound',    color:'#7C3AED',
+          desc:'Sedimantta Cu-Co, PGE, karbonatlarda Zn-Pb\nYatay katman, kenar yoğun. Gravite+mag ayrımı zor' },
+      ]
+    },
+  };
+
+  // Uncertainty
+  const [uqRunning, setUqRunning]=useState(false);
+  const [uqResult, setUqResult]=useState(null);
+  const [uqDisplayMode, setUqDisplayMode]=useState('mean'); // mean|std|cv|p10|p90
+  const [uqNReal, setUqNReal]=useState(5);
+  const [uqNoise, setUqNoise]=useState(0.03);
+  const [uqIter, setUqIter]=useState(40);
+
+  // Katmanlar & dataset
+  const [settings, setSettings]=useState({grav:true,mag:true,csamt:false,index:0});
+  const [datasets, setDatasets]=useState([]);
+  const [selY, setSelY]=useState(null);
+  const [selGM, setSelGM]=useState(null);
+  const [selCS, setSelCS]=useState(null);
+  const [jiGridSize, setJiGridSize]=useState(16);
+  const [uploading, setUploading]=useState(false);
+  const fileRef=useRef();
+
+  // Joint inversion
+  const [jiOpen, setJiOpen]=useState(false);
+  const [jiRunning, setJiRunning]=useState(false);
+  const [jiWeights, setJiWeights]=useState({grav:1.0,mag:1.0,csamt:1.0});
+  const [jiIter, setJiIter]=useState(60);
+  const [jiHistory, setJiHistory]=useState([]);
+  const [jiCorr, setJiCorr]=useState({});
+  const [jiSummary, setJiSummary]=useState(null);
+
+  // Analiz geçmişi
+  const [lastRun, setLastRun]=useState(null);
+  const [savedAnalyses, setSavedAnalyses]=useState([]);
+  const [saving, setSaving]=useState(false);
+
+  // Log
+  const [logs, setLogs]=useState([{t:'00:00:00',level:'ok',msg:'GeoPINN Studio hazır.'}]);
+  const [loading, setLoading]=useState(false);
+
+  // Fullscreen
+  const viewerRef=useRef();
+  const [isFs, setIsFs]=useState(false);
+
+  const ts=()=>new Date().toLocaleTimeString('tr-TR',{hour12:false});
+  const log=(level,msg)=>setLogs(p=>[{t:ts(),level,msg},...p].slice(0,300));
+
+  const activeDisplay = filteredData || modelData;
+
+  // Sweep animasyonu
+  const startSweep=()=>{
+    if (sweepRef.current) return;
+    setSweeping(true);
+    let i=0, n=activeDisplay?.length??16;
+    sweepRef.current=setInterval(()=>{
+      setSliceIdx(i%n);
+      i++;
+    },120);
+  };
+  const stopSweep=()=>{
+    clearInterval(sweepRef.current);
+    sweepRef.current=null;
+    setSweeping(false);
+  };
+
+  // Backend
+  useEffect(()=>{
+    fetch(`${apiBase}/api/health`).then(r=>r.json())
+      .then(d=>log('ok',`Backend v${d.version} bağlandı.`))
+      .catch(()=>log('err','Backend bağlantısı kurulamadı.'));
+    fetchDatasets();
+    fetchAnalyses();
+  }, [apiBase]);
+
+  const fetchDatasets=async()=>{
+    try{const d=await(await fetch(`${apiBase}/api/data/list`)).json();setDatasets(d.files||[]);}
+    catch(e){log('err','Veri listesi alınamadı.');}
+  };
+  const fetchAnalyses=async()=>{
+    try{const d=await(await fetch(`${apiBase}/api/analyses`)).json();setSavedAnalyses(d.analyses||[]);}
+    catch{}
+  };
+
+  const calcMetrics=data=>{
+    const vv=Math.pow(30,3);let vol=0,mass=0,sum=0;
+    data.flat(2).forEach(v=>{if(v>0.1){vol+=vv;mass+=v*2000*vv;sum+=v;}});
+    return{volume:vol,mass:mass/1000,heat:sum*0.05};
+  };
+  const updateModel=data=>{
+    setModelData(data); setFilteredData(null);
+    const flat=data.flat(2);
+    setColorRange({min:Math.min(...flat),max:Math.max(...flat)});
+    setMetrics(calcMetrics(data));
+  };
+
+  const runAnalysis=async()=>{
+    setLoading(true); log('info','Fizik motoru çağrılıyor...');
+    try{
+      const d=await(await fetch(`${apiBase}/api/run-physics-engine`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({grav_active:settings.grav,mag_active:settings.mag,
+          csamt_active:settings.csamt,selected_index:settings.index,
+          dataset:selY,dataset_gravmag:selGM,dataset_csamt:selCS}),
+      })).json();
+      updateModel(d.model_data);
+      setResults(d.results||{});
+      setLastRun('physics');
+      log('ok',`Analiz tamamlandı — ${d.dataset_used}`);
+    } catch(e){log('err',`Analiz hatası: ${e.message}`);}
+    finally{setLoading(false);}
+  };
+
+  const runJI=async()=>{
+    if(![settings.grav,settings.mag,settings.csamt].some(Boolean)){log('err','En az bir katman aktif olmalı.');return;}
+    setJiRunning(true); log('info',`Joint inversion (${jiIter} iter, grid ${jiGridSize}³)...`);
+    try{
+      const d=await(await fetch(`${apiBase}/api/joint-inversion`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({grav_active:settings.grav,mag_active:settings.mag,
+          csamt_active:settings.csamt,selected_index:settings.index,
+          dataset:selY,dataset_grav_mag:selGM,dataset_csamt:selCS,
+          n_iter:jiIter,weights:jiWeights,nbc_forward:jiGridSize}),
+      })).json();
+      updateModel(d.model_data);
+      setJiHistory(d.history||[]);
+      setJiCorr(d.correlation||{});
+      setJiSummary({initial:d.initial_misfit,final:d.final_misfit,rmse:d.rmse_vs_true_model,dataset:d.dataset_used});
+      setLastRun('joint');
+      log('ok',`Joint inv. tamamlandı — misfit ${d.initial_misfit?.toFixed(3)}→${d.final_misfit?.toFixed(3)}`);
+    }catch(e){log('err',`JI hatası: ${e.message}`);}
+    finally{setJiRunning(false);}
+  };
+
+  // SimPEG
+  const [simpegRunning, setSimpegRunning]=useState(false);
+  const [simpegResult, setSimpegResult]=useState(null);
+  const [simpegNbc, setSimpegNbc]=useState(16);
+  const [simpegIter, setSimpegIter]=useState(15);
+  const [simpegAlphaS, setSimpegAlphaS]=useState(-4);  // log10
+  const [simpegAlphaX, setSimpegAlphaX]=useState(0);   // log10
+  const [simpegAvailable, setSimpegAvailable]=useState(null);
+
+  useEffect(()=>{
+    fetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
+      .then(d=>setSimpegAvailable(d.available))
+      .catch(()=>setSimpegAvailable(false));
+  },[]);
+
+  const runSimPEG = async () => {
+    setSimpegRunning(true);
+    log('info',`SimPEG Tikhonov inversion başlatıldı (${simpegNbc}³, ${simpegIter} iter)...`);
+    try {
+      const r = await fetch(`${apiBase}/api/simpeg/inversion`,{
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          grav_active: settings.grav, mag_active: settings.mag,
+          dataset: selY, dataset_grav_mag: selGM,
+          selected_index: settings.index,
+          nbc: simpegNbc, max_iter: simpegIter,
+          alpha_s: Math.pow(10, simpegAlphaS),
+          alpha_x: Math.pow(10, simpegAlphaX),
+          chifact: 1.0,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setSimpegResult(d);
+      if (d.model_data) { updateModel(d.model_data); setLastRun('joint'); }
+      setRightTab('simpeg');
+      log('ok',`SimPEG tamamlandı — ${d.method}`);
+    } catch(e){ log('err',`SimPEG hatası: ${e.message}`); }
+    finally{ setSimpegRunning(false); }
+  };
+
+
+  const runUQ = async () => {
+    setUqRunning(true);
+    log('info', `Belirsizlik analizi (${uqNReal} realizasyon, iter=${uqIter})...`);
+    try {
+      const r = await fetch(`${apiBase}/api/uncertainty`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          grav_active: settings.grav, mag_active: settings.mag, csamt_active: settings.csamt,
+          dataset: selY, dataset_grav_mag: selGM, dataset_csamt: selCS,
+          selected_index: settings.index,
+          nbc_forward: jiGridSize, n_iter: uqIter,
+          n_realizations: uqNReal, noise_level: uqNoise,
+          weights: jiWeights, reg_lambda: 0.001,
+        }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setUqResult(d);
+      // Ortalama modeli görüntüle
+      updateModel(d.mean_model);
+      setUqDisplayMode('mean');
+      setRightTab('uq');
+      log('ok', `Belirsizlik analizi tamamlandı — yüksek güven: %${d.summary.high_conf_pct}, düşük güven: %${d.summary.low_conf_pct}`);
+    } catch(e) { log('err', `UQ hatası: ${e.message}`); }
+    finally { setUqRunning(false); }
+  };
+
+  const applyUQLayer = (mode) => {
+    if (!uqResult) return;
+    const layers = { mean: uqResult.mean_model, std: uqResult.std_model,
+                     cv: uqResult.cv_model, p10: uqResult.p10_model, p90: uqResult.p90_model };
+    const data = layers[mode];
+    if (!data) return;
+    setUqDisplayMode(mode);
+    updateModel(data);
+    log('info', `Belirsizlik katmanı: ${mode.toUpperCase()}`);
+  };
+
+  const saveAnalysis = async () => {
+    if(!lastRun){log('err','Önce bir analiz çalıştırın.');return;}
+    const name=window.prompt('Analiz adı:',`${lastRun==='joint'?'Joint Inv.':'Analiz'} — ${new Date().toLocaleString('tr-TR')}`);
+    if(!name) return;
+    setSaving(true);
+    try{
+      await fetch(`${apiBase}/api/analyses`,{method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({name,type:lastRun,dataset_used:selY,settings,results,metrics,
+          model_data:modelData,history:jiHistory,correlation:jiCorr,summary:jiSummary})});
+      log('ok',`Kaydedildi: "${name}"`); fetchAnalyses();
+    }catch(e){log('err',`Kayıt hatası: ${e.message}`);}
+    finally{setSaving(false);}
+  };
+
+  const loadAnalysis=async(id)=>{
+    try{
+      const r=await(await fetch(`${apiBase}/api/analyses/${id}`)).json();
+      if(r.model_data){updateModel(r.model_data);}
+      if(r.type==='joint'){setJiHistory(r.history||[]);setJiCorr(r.correlation||{});setJiSummary(r.summary||null);}
+      if(r.settings)setSettings(r.settings);
+      setLastRun(r.type); setRightTab('stats');
+      log('ok',`Yüklendi: "${r.name}"`);
+    }catch(e){log('err',`Yükleme hatası: ${e.message}`);}
+  };
+
+  const uploadFile=async(file)=>{
+    if(!file?.name.endsWith('.npy')){log('err','Sadece .npy');return;}
+    setUploading(true); log('info',`Yükleniyor: ${file.name}`);
+    try{
+      const form=new FormData(); form.append('file',file);
+      const d=await(await fetch(`${apiBase}/api/data/upload`,{method:'POST',body:form})).json();
+      log('ok',`Yüklendi: ${d.filename} (${(d.shape||[]).join('×')})`);
+      await fetchDatasets();
+      const fn=d.filename;
+      if(fn.toLowerCase().startsWith('x_csamt')) setSelCS(fn);
+      else if(fn.startsWith('X_')||fn.startsWith('x_')) setSelGM(fn);
+      else setSelY(fn);
+    }catch(e){log('err',`Yükleme: ${e.message}`);}
+    finally{setUploading(false);}
+  };
+
+  const deleteDataset=async(fn)=>{
+    await fetch(`${apiBase}/api/data/${encodeURIComponent(fn)}`,{method:'DELETE'});
+    if(selY===fn)setSelY(null); if(selGM===fn)setSelGM(null); if(selCS===fn)setSelCS(null);
+    fetchDatasets(); log('ok',`Silindi: ${fn}`);
+  };
+
+  useEffect(()=>{
+    const h=()=>{setIsFs(!!document.fullscreenElement);setTimeout(()=>window.dispatchEvent(new Event('resize')),60);};
+    document.addEventListener('fullscreenchange',h);
+    return()=>document.removeEventListener('fullscreenchange',h);
+  },[]);
+
+  const toggleFs=()=>!document.fullscreenElement?viewerRef.current?.requestFullscreen():document.exitFullscreen();
+
+  const layerConfig=[
+    {key:'grav',label:'Gravite',sub:'Bouguer anomali',icon:Gauge,color:C.teal},
+    {key:'mag',label:'Manyetik',sub:'TMI anomali',icon:Magnet,color:C.accent},
+    {key:'csamt',label:'CSAMT',sub:'Görünür özdirenç',icon:Radio,color:C.purple},
+  ];
+
+  const viewTabs=[
+    {id:'3d',label:'3D',icon:Box},
+    {id:'slice',label:'Kesit',icon:Layers},
+    {id:'anomaly',label:'Harita',icon:Map},
+    {id:'stats',label:'İstatistik',icon:BarChart2},
+  ];
+
+  const rightTabs=[
+    {id:'stats',  label:'Analiz',     icon:Activity},
+    {id:'uq',     label:'Belirsizlik',icon:AlertCircle},
+    {id:'simpeg', label:'SimPEG',     icon:GitCompare},
+    {id:'geom',   label:'Geometri',   icon:Mountain},
+    {id:'filter', label:'Filtre',     icon:Filter},
+    {id:'export', label:'Dışa Aktar', icon:Download},
+  ];
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+  return (
+    <div style={{ display:'flex', flexDirection:'column', height:'100vh',
+                  background: C.bg, color: C.text, fontFamily:'system-ui,sans-serif',
+                  overflow:'hidden', fontSize:13 }}>
+
+      {/* ── Üst şerit ── */}
+      <header style={{ height:44, background: C.header, borderBottom:`2px solid ${C.accent}`,
+                       display:'flex', alignItems:'center', padding:'0 16px', gap:16,
+                       flexShrink:0, boxShadow:'0 2px 8px rgba(0,0,0,0.2)' }}>
+        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+          <div style={{ width:28, height:28, borderRadius:6, background: C.accent,
+                        display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <Mountain size={16} color="#fff" />
+          </div>
+          <div>
+            <div style={{ fontSize:14, fontWeight:800, color:'#fff', letterSpacing:'0.02em' }}>GeoPINN</div>
+            <div style={{ fontSize:9, color: C.accentL, letterSpacing:'0.1em', textTransform:'uppercase', marginTop:-2 }}>
+              Studio 3.0 — Applied Geophysics
             </div>
           </div>
-          <div className="flex-1 min-h-0 flex flex-col gap-2">
-            <h3 className="text-[10px] uppercase tracking-wider text-slate-500 font-bold flex items-center gap-1.5">
-              <Terminal size={11} /> Log Konsolu
-            </h3>
-            <div className="flex-1 bg-slate-900 rounded-md border border-slate-200 p-2.5 overflow-y-auto font-mono text-[11px] leading-relaxed">
-              {logs.map((log, i) => (
-                <div key={i} className="flex gap-2">
-                  <span className="text-slate-500 shrink-0">{log.t}</span>
-                  <span className={
-                    log.level === 'err' ? 'text-rose-400' :
-                    log.level === 'ok' ? 'text-teal-400' : 'text-slate-400'
-                  }>{log.msg}</span>
+        </div>
+
+        {/* Görünüm sekmeleri */}
+        <div style={{ display:'flex', gap:2, background:'rgba(255,255,255,0.1)',
+                      borderRadius:6, padding:3, marginLeft:8 }}>
+          {viewTabs.map(({id,label,icon:Icon})=>(
+            <button key={id} onClick={()=>setViewMode(id)}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 12px',
+                       borderRadius:4, border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
+                       background: viewMode===id ? '#fff' : 'transparent',
+                       color: viewMode===id ? C.header : 'rgba(255,255,255,0.7)',
+                       transition:'all 0.15s' }}>
+              <Icon size={12}/>{label}
+            </button>
+          ))}
+        </div>
+
+        <div style={{ flex:1 }}/>
+
+        {/* Durum */}
+        <div style={{ display:'flex', alignItems:'center', gap:12, fontSize:11,
+                      color:'rgba(255,255,255,0.7)', fontFamily:'monospace' }}>
+          <span style={{ display:'flex', alignItems:'center', gap:5 }}>
+            <span style={{ width:7, height:7, borderRadius:'50%',
+                           background: loading||jiRunning ? C.warn : C.ok,
+                           boxShadow: loading||jiRunning ? `0 0 6px ${C.warn}` : `0 0 6px ${C.ok}`,
+                           display:'inline-block', animation: loading||jiRunning ? 'pulse 1s infinite' : 'none' }}/>
+            {loading?'İşleniyor':jiRunning?'Ters çözüm':selGM||selY||'demo/sentetik'}
+          </span>
+          <span style={{ color:'rgba(255,255,255,0.4)' }}>|</span>
+          <span>{layerConfig.filter(l=>settings[l.key]).length} katman</span>
+          <span style={{ color:'rgba(255,255,255,0.4)' }}>|</span>
+          <span style={{ fontSize:10, color: backendMode==='colab' ? '#34D399' : 'rgba(255,255,255,0.5)',
+                         display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:6, height:6, borderRadius:'50%', display:'inline-block',
+                           background: backendMode==='colab' ? '#34D399' : 'rgba(255,255,255,0.3)' }}/>
+            {backendMode==='colab' ? 'Colab GPU' : 'Yerel'}
+          </span>
+          <button onClick={()=>setShowSettings(true)}
+            style={{ background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.2)',
+                     borderRadius:5, padding:'3px 10px', cursor:'pointer', color:'rgba(255,255,255,0.8)',
+                     fontSize:11, display:'flex', alignItems:'center', gap:4 }}>
+            <Settings size={12}/> Bağlantı
+          </button>
+          <button onClick={()=>setShowHelp(true)}
+            style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:5,
+                     padding:'3px 10px', cursor:'pointer', color:'#fff', fontSize:11,
+                     fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
+            <Info size={12}/> Rehber
+          </button>
+        </div>
+      </header>
+
+      {/* ── Yardım Modalı ── */}
+      {showSettings && (
+        <div style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.5)',
+                      display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={()=>setShowSettings(false)}>
+          <div style={{ background:C.surface, borderRadius:10, width:480,
+                        boxShadow:'0 20px 60px rgba(0,0,0,0.3)', border:`1px solid ${C.border}` }}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{ padding:'14px 18px', borderBottom:`1px solid ${C.border}`,
+                          background:C.header, borderRadius:'10px 10px 0 0',
+                          display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+              <span style={{ fontSize:14, fontWeight:700, color:'#fff' }}>Backend Bağlantısı</span>
+              <button onClick={()=>setShowSettings(false)}
+                style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:5,
+                         padding:'2px 8px', cursor:'pointer', color:'#fff' }}>✕</button>
+            </div>
+
+            <div style={{ padding:20 }}>
+              {/* Mod seçimi */}
+              <div style={{ display:'flex', gap:8, marginBottom:16 }}>
+                {[{id:'local',label:'🖥 Yerel Backend',desc:'Bilgisayarında çalışır, GPU yok'},
+                  {id:'colab',label:'☁ Google Colab GPU',desc:'Ngrok URL gerekli, hızlı'}].map(({id,label,desc})=>(
+                  <button key={id} onClick={()=>setBackendMode(id)}
+                    style={{ flex:1, padding:'10px 12px', borderRadius:7, cursor:'pointer',
+                             border:`2px solid ${backendMode===id?C.teal:C.border}`,
+                             background: backendMode===id?`${C.teal}10`:C.bg,
+                             textAlign:'left', transition:'all 0.15s' }}>
+                    <div style={{ fontSize:12, fontWeight:700, color:backendMode===id?C.teal:C.text }}>{label}</div>
+                    <div style={{ fontSize:10, color:C.textLow, marginTop:2 }}>{desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {/* Colab URL girişi */}
+              {backendMode==='colab' && (
+                <div style={{ marginBottom:16 }}>
+                  <div style={{ fontSize:11, fontWeight:600, color:C.header, marginBottom:6 }}>
+                    Ngrok URL (Colab'dan kopyala)
+                  </div>
+                  <input type="text" value={colabUrl}
+                    onChange={e=>setColabUrl(e.target.value.trim())}
+                    placeholder="https://xxxx-xx-xx.ngrok-free.app"
+                    style={{ width:'100%', padding:'8px 10px', border:`1px solid ${C.border}`,
+                             borderRadius:6, fontSize:12, fontFamily:'monospace',
+                             background:C.bg, color:C.text, boxSizing:'border-box' }}/>
+                  <div style={{ fontSize:10, color:C.textLow, marginTop:4, lineHeight:1.5 }}>
+                    Colab notebook'ta "Backend URL:" satırının yanındaki URL'yi yapıştır.<br/>
+                    Her yeni Colab oturumunda bu URL değişir.
+                  </div>
+                </div>
+              )}
+
+              {/* Bilgi kutusu */}
+              <div style={{ background:`${C.teal}08`, border:`1px solid ${C.teal}25`,
+                            borderRadius:6, padding:'8px 12px', marginBottom:16,
+                            fontSize:10, color:C.textMid, lineHeight:1.6 }}>
+                {backendMode==='local'
+                  ? 'Yerel mod: Backend exe veya Python uvicorn ile localhost:8000\'de çalışır. GPU yok.'
+                  : 'Colab modu: Tüm hesaplamalar GPU\'lu Colab sunucusunda yapılır. Colab notebook açık kalmalı.'}
+              </div>
+
+              {/* Kaydet butonu */}
+              <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
+                <Btn onClick={()=>setShowSettings(false)} variant="secondary" size="sm">İptal</Btn>
+                <Btn onClick={saveSettings} variant="teal" size="sm" icon={settingsSaved?CheckCircle:Settings}>
+                  {settingsSaved ? 'Kaydedildi!' : 'Kaydet ve Bağlan'}
+                </Btn>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showHelp && (
+        <div style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.6)',
+                      display:'flex', alignItems:'center', justifyContent:'center' }}
+          onClick={()=>setShowHelp(false)}>
+          <div style={{ background:C.surface, borderRadius:12, width:600, maxHeight:'80vh',
+                        overflow:'hidden', boxShadow:'0 24px 64px rgba(0,0,0,0.4)',
+                        border:`1px solid ${C.border}` }}
+            onClick={e=>e.stopPropagation()}>
+
+            {/* Modal başlık */}
+            <div style={{ padding:'14px 18px', borderBottom:`1px solid ${C.border}`,
+                          display:'flex', alignItems:'center', justifyContent:'space-between',
+                          background: C.header }}>
+              <span style={{ fontSize:14, fontWeight:700, color:'#fff' }}>GeoPINN Kullanım Rehberi</span>
+              <button onClick={()=>setShowHelp(false)}
+                style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:5,
+                         padding:'3px 8px', cursor:'pointer', color:'#fff', fontSize:12 }}>✕</button>
+            </div>
+
+            {/* Konu sekmeleri */}
+            <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, background:C.bg }}>
+              {[{id:'workflow',label:'İş Akışı'},{id:'values',label:'Değerler'},
+                {id:'geom',label:'Geometri'},{id:'simpeg',label:'SimPEG'}].map(({id,label})=>(
+                <button key={id} onClick={()=>setHelpTopic(id)}
+                  style={{ flex:1, padding:'9px 4px', border:'none', cursor:'pointer',
+                           fontSize:11, fontWeight:700,
+                           background: helpTopic===id ? C.surface : 'transparent',
+                           color: helpTopic===id ? C.accent : C.textMid,
+                           borderBottom: helpTopic===id ? `2px solid ${C.accent}` : '2px solid transparent' }}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* İçerik */}
+            <div style={{ padding:20, overflowY:'auto', maxHeight:'calc(80vh - 110px)' }}>
+              <div style={{ fontSize:13, fontWeight:700, color:C.header, marginBottom:14 }}>
+                {HELP[helpTopic]?.title}
+              </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                {HELP[helpTopic]?.items.map(({label,color,desc})=>(
+                  <div key={label} style={{ display:'flex', gap:12, padding:'10px 12px',
+                                            background:`${color}08`, border:`1px solid ${color}25`,
+                                            borderRadius:7, borderLeft:`3px solid ${color}` }}>
+                    <div style={{ minWidth:120, flexShrink:0 }}>
+                      <div style={{ fontSize:12, fontWeight:700, color, lineHeight:1.3 }}>{label}</div>
+                    </div>
+                    <div style={{ fontSize:11, color:C.textMid, lineHeight:1.7, whiteSpace:'pre-line' }}>
+                      {desc}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {helpTopic === 'workflow' && (
+                <div style={{ marginTop:14, padding:'10px 12px', background:`${C.teal}08`,
+                              border:`1px solid ${C.teal}25`, borderRadius:7,
+                              fontSize:11, color:C.textMid, lineHeight:1.7 }}>
+                  <strong style={{color:C.teal}}>Petrofizik formüller:</strong><br/>
+                  {'ρ(x) = 2.70 + 2.00×f  [g/cm³]  →  f=1 → 4.70 g/cm³ (baritli REE cevheri)'}<br/>
+                  {'χ(x) = 1×10⁻⁴ + 3×10⁻⁴×f  [SI]  →  f=1 → 4×10⁻⁴ SI'}<br/>
+                  {'ρₑ(x) = 500 × 0.10^f  [Ω·m]  →  f=1 → 50 Ω·m (iletken sülfürlü zon)'}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Ana içerik ── */}
+      <div style={{ display:'flex', flex:1, minHeight:0 }}>
+
+        {/* ── Sol panel ── */}
+        <aside style={{ width:260, background: C.surface, borderRight:`1px solid ${C.border}`,
+                        display:'flex', flexDirection:'column', overflowY:'auto', flexShrink:0 }}>
+
+          {/* Sol sekme */}
+          <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
+            {[{id:'layers',label:'Katmanlar'},{id:'data',label:'Veri'},{id:'ji',label:'Ters Çözüm'}].map(({id,label})=>(
+              <button key={id} onClick={()=>setLeftTab(id)}
+                style={{ flex:1, padding:'8px 4px', border:'none', cursor:'pointer',
+                         fontSize:10, fontWeight:700, letterSpacing:'0.05em', textTransform:'uppercase',
+                         background: leftTab===id ? C.accent : 'transparent',
+                         color: leftTab===id ? '#fff' : C.textMid,
+                         borderBottom: leftTab===id ? `2px solid ${C.accent}` : '2px solid transparent',
+                         transition:'all 0.15s' }}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {/* Katmanlar sekmesi */}
+          {leftTab==='layers' && (
+            <>
+              <PanelSection title="Veri Katmanları" icon={Layers}>
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {layerConfig.map(({key,label,sub,icon:Icon,color})=>(
+                    <label key={key} style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px',
+                                              borderRadius:6, cursor:'pointer', transition:'all 0.15s',
+                                              background: settings[key] ? `${color}12` : C.bg,
+                                              border:`1px solid ${settings[key]?color+'40':C.border}` }}>
+                      <input type="checkbox" checked={settings[key]}
+                        onChange={e=>setSettings({...settings,[key]:e.target.checked})}
+                        style={{accentColor:color,width:14,height:14}}/>
+                      <Icon size={14} color={settings[key]?color:C.textLow}/>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:600,color:settings[key]?C.text:C.textMid}}>{label}</div>
+                        <div style={{fontSize:10,color:C.textLow}}>{sub}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+              </PanelSection>
+
+              <PanelSection title="3D Görünüm" icon={Box}>
+                <RangeRow label="İzoyüzey eşiği" value={isoThreshold} min={0.01} max={0.5} step={0.01}
+                  onChange={setIsoThreshold} format={v=>`${(v*100).toFixed(0)}%`}/>
+                <RangeRow label="Şeffaflık" value={opacity3d} min={0.1} max={1.0} step={0.05}
+                  onChange={setOpacity3d} format={v=>`${(v*100).toFixed(0)}%`}/>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                  <span style={{fontSize:11,color:C.textMid}}>Arka plan</span>
+                  <div style={{display:'flex',gap:4}}>
+                    {['dark','light'].map(m=>(
+                      <button key={m} onClick={()=>setViewBg(m)}
+                        style={{padding:'3px 8px',borderRadius:4,border:`1px solid ${C.border}`,fontSize:10,
+                                cursor:'pointer',background:viewBg===m?C.header:C.surface,
+                                color:viewBg===m?'#fff':C.textMid}}>
+                        {m==='dark'?'Koyu':'Açık'}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8}}>
+                  <input type="checkbox" id="topoCheck" checked={showTopo} onChange={e=>setShowTopo(e.target.checked)}
+                    style={{accentColor:C.ok}}/>
+                  <label htmlFor="topoCheck" style={{fontSize:11,color:C.textMid,cursor:'pointer'}}>Topografik katman</label>
+                </div>
+                {showTopo && (
+                  <RangeRow label="Topografya saydamlığı" value={topoOpacity} min={0.1} max={1} step={0.05}
+                    onChange={setTopoOpacity} format={v=>`${(v*100).toFixed(0)}%`}/>
+                )}
+              </PanelSection>
+
+              <PanelSection title="Kesit Kontrol" icon={Grid} defaultOpen={false}>
+                <div style={{display:'flex',gap:4,marginBottom:8}}>
+                  {['x','y','z'].map(ax=>(
+                    <button key={ax} onClick={()=>setSliceAxis(ax)}
+                      style={{flex:1,padding:'4px',borderRadius:4,border:`1px solid ${sliceAxis===ax?C.teal:C.border}`,
+                              background:sliceAxis===ax?`${C.teal}18`:'transparent',
+                              color:sliceAxis===ax?C.teal:C.textMid,fontWeight:700,fontSize:11,cursor:'pointer'}}>
+                      {ax.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+                <RangeRow label={`Kesit (${sliceAxis.toUpperCase()})`}
+                  value={sliceIdx} min={0} max={(activeDisplay?.length??16)-1}
+                  onChange={v=>{setSliceIdx(Math.round(v));setViewMode('slice');}}/>
+                <div style={{display:'flex',gap:6}}>
+                  {!sweeping
+                    ? <Btn onClick={()=>{setViewMode('slice');startSweep();}} icon={Play} size="sm" variant="teal" style={{flex:1}}>Animasyon</Btn>
+                    : <Btn onClick={stopSweep} icon={Sliders} size="sm" variant="danger" style={{flex:1}}>Durdur</Btn>
+                  }
+                </div>
+              </PanelSection>
+            </>
+          )}
+
+          {/* Veri sekmesi */}
+          {leftTab==='data' && (
+            <>
+              <div style={{padding:12,borderBottom:`1px solid ${C.border}`}}>
+                <Btn onClick={()=>fileRef.current?.click()} icon={Upload} variant="secondary" size="sm"
+                  style={{width:'100%'}} disabled={uploading}>
+                  {uploading?'Yükleniyor...':'Veri Yükle (.npy)'}
+                </Btn>
+                <input ref={fileRef} type="file" accept=".npy" style={{display:'none'}}
+                  onChange={e=>{uploadFile(e.target.files?.[0]);e.target.value='';}}/>
+              </div>
+
+              {[
+                {label:'Y — Geometri',prefix:'Y_',sel:selY,setSel:setSelY,name:'dataset_y'},
+                {label:'X — Grav/Mag',prefix:'X_',sel:selGM,setSel:setSelGM,name:'dataset_gm'},
+                {label:'X — CSAMT',prefix:'x_csamt',sel:selCS,setSel:setSelCS,name:'dataset_cs'},
+              ].map(({label,prefix,sel,setSel,name})=>(
+                <PanelSection key={name} title={label} icon={Database} defaultOpen={true}>
+                  <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                    <label style={{display:'flex',alignItems:'center',gap:6,padding:'5px 8px',borderRadius:5,cursor:'pointer',
+                                   background:sel===null?`${C.teal}12`:C.bg,border:`1px solid ${sel===null?C.teal+'40':C.border}`}}>
+                      <input type="radio" name={name} checked={sel===null} onChange={()=>setSel(null)} style={{accentColor:C.teal}}/>
+                      <span style={{fontSize:11,color:C.textMid}}>demo / sentetik</span>
+                    </label>
+                    {datasets.filter(ds=>prefix.startsWith('x_csamt')?ds.filename.toLowerCase().startsWith('x_csamt'):
+                      prefix==='X_'?(!ds.filename.startsWith('Y_')&&!ds.filename.toLowerCase().startsWith('x_csamt')):
+                      ds.filename.startsWith('Y_')).map(ds=>(
+                      <div key={ds.filename} style={{display:'flex',alignItems:'center',gap:4,padding:'5px 8px',
+                                                      borderRadius:5,background:sel===ds.filename?`${C.teal}12`:C.bg,
+                                                      border:`1px solid ${sel===ds.filename?C.teal+'40':C.border}`}}>
+                        <label style={{display:'flex',alignItems:'center',gap:6,flex:1,cursor:'pointer',minWidth:0}}>
+                          <input type="radio" name={name} checked={sel===ds.filename} onChange={()=>setSel(ds.filename)} style={{accentColor:C.teal}}/>
+                          <div style={{minWidth:0}}>
+                            <div style={{fontSize:11,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{ds.filename}</div>
+                            <div style={{fontSize:9,color:C.textLow,fontFamily:'monospace'}}>{ds.shape?.join('×')} · {ds.size_kb}KB</div>
+                          </div>
+                        </label>
+                        <button onClick={()=>deleteDataset(ds.filename)} style={{background:'none',border:'none',cursor:'pointer',color:C.err,padding:2,flexShrink:0}}>
+                          <Trash2 size={12}/>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </PanelSection>
+              ))}
+
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:8}}>
+                <Btn onClick={runAnalysis} icon={Play} disabled={loading} style={{width:'100%'}}>
+                  {loading?<><Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/>&nbsp;İşleniyor...</>:'Analizi Başlat'}
+                </Btn>
+                <div style={{display:'flex',gap:6}}>
+                  <Btn onClick={saveAnalysis} icon={Save} variant="secondary" size="sm" disabled={saving||!lastRun} style={{flex:1}}>Kaydet</Btn>
+                </div>
+              </div>
+
+              <PanelSection title="Geçmiş Analizler" icon={History} defaultOpen={false}
+                badge={savedAnalyses.length}>
+                <div style={{display:'flex',flexDirection:'column',gap:4,maxHeight:200,overflowY:'auto'}}>
+                  {savedAnalyses.length===0&&<span style={{fontSize:11,color:C.textLow}}>Kayıtlı analiz yok.</span>}
+                  {savedAnalyses.map(a=>(
+                    <div key={a.id} style={{display:'flex',alignItems:'center',gap:4,padding:'6px 8px',
+                                            borderRadius:5,background:C.bg,border:`1px solid ${C.border}`}}>
+                      <button onClick={()=>loadAnalysis(a.id)} style={{background:'none',border:'none',cursor:'pointer',
+                                                                         flex:1,textAlign:'left',minWidth:0}}>
+                        <div style={{fontSize:11,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</div>
+                        <div style={{fontSize:9,color:C.textLow}}><Tag color={a.type==='joint'?C.purple:C.teal}>{a.type}</Tag></div>
+                      </button>
+                      <button onClick={async()=>{await fetch(`${apiBase}/api/analyses/${a.id}`,{method:'DELETE'});fetchAnalyses();}}
+                        style={{background:'none',border:'none',cursor:'pointer',color:C.err,padding:2,flexShrink:0}}>
+                        <Trash2 size={12}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </PanelSection>
+            </>
+          )}
+
+          {/* Ters çözüm sekmesi */}
+          {leftTab==='ji' && (
+            <div style={{padding:12,display:'flex',flexDirection:'column',gap:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                           letterSpacing:'0.06em',paddingBottom:8,borderBottom:`1px solid ${C.border}`}}>
+                Ortak Ters Çözüm (Adam)
+              </div>
+
+              {layerConfig.map(({key,label,color})=>(
+                <RangeRow key={key} label={`${label} ağırlık`} value={jiWeights[key]}
+                  min={0} max={2} step={0.1}
+                  onChange={v=>setJiWeights({...jiWeights,[key]:v})}
+                  format={v=>v.toFixed(1)}/>
+              ))}
+
+              <RangeRow label="İterasyon sayısı" value={jiIter} min={10} max={200} step={5}
+                onChange={setJiIter} format={v=>Math.round(v)}/>
+
+              <div style={{marginBottom:4}}>
+                <div style={{fontSize:11,color:C.textMid,marginBottom:4}}>Grid çözünürlüğü</div>
+                <Select value={jiGridSize} onChange={v=>setJiGridSize(parseInt(v))} options={[
+                  {value:8,label:'8³ — çok hızlı'},
+                  {value:16,label:'16³ — hızlı (varsayılan)'},
+                  {value:21,label:'21³ — native X'},
+                  {value:32,label:'32³ — yüksek (yavaş)'},
+                ]}/>
+              </div>
+
+              <Btn onClick={runJI} icon={jiRunning?Loader2:GitCompare} disabled={jiRunning}
+                variant="teal" style={{width:'100%'}}>
+                {jiRunning?'Çözülüyor...':'Ters Çözümü Başlat'}
+              </Btn>
+
+              <div style={{height:1,background:C.border,margin:'8px 0'}}/>
+
+              <div style={{fontSize:10,color:C.textMid,marginBottom:6}}>
+                Ters çözüm sonrası belirsizliği ölç:
+              </div>
+              <Btn onClick={()=>{setRightTab('uq');}} icon={AlertCircle}
+                variant="secondary" size="sm" style={{width:'100%'}}>
+                Belirsizlik Analizine Geç →
+              </Btn>
+
+              {jiSummary && (
+                <div style={{background:`${C.ok}12`,border:`1px solid ${C.ok}40`,borderRadius:6,padding:10}}>
+                  <div style={{fontSize:10,color:C.ok,fontWeight:700,marginBottom:4}}>Son Sonuç</div>
+                  <div style={{fontSize:11,fontFamily:'monospace',color:C.text,lineHeight:1.7}}>
+                    <div>Misfit: {jiSummary.initial?.toFixed(4)} → <strong style={{color:C.ok}}>{jiSummary.final?.toFixed(4)}</strong></div>
+                    <div>RMSE: <strong>{jiSummary.rmse?.toFixed(4)}</strong></div>
+                    <div style={{fontSize:9,color:C.textLow,marginTop:2}}>{jiSummary.dataset}</div>
+                  </div>
+                </div>
+              )}
+
+              {jiHistory.length > 0 && (
+                <div>
+                  <div style={{fontSize:11,fontWeight:600,color:C.header,marginBottom:4}}>Yakınsama</div>
+                  <ResponsiveContainer width="100%" height={100}>
+                    <LineChart data={jiHistory} margin={{top:2,right:4,left:-28,bottom:0}}>
+                      <YAxis tick={{fontSize:8,fill:C.textLow}}/>
+                      <Tooltip contentStyle={{fontSize:10,background:C.surface,border:`1px solid ${C.border}`}}/>
+                      <Line type="monotone" dataKey="misfit" name="Toplam" stroke={C.teal} dot={false} strokeWidth={2}/>
+                      {settings.grav&&<Line dataKey="misfit_grav" name="Grav" stroke={C.tealL} dot={false} strokeWidth={1}/>}
+                      {settings.mag&&<Line dataKey="misfit_mag" name="Mag" stroke={C.accent} dot={false} strokeWidth={1}/>}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Metrik kartlar — her sekmede alt */}
+          <div style={{ marginTop:'auto', padding:12, borderTop:`1px solid ${C.border}`,
+                        display:'flex', flexDirection:'column', gap:6 }}>
+            <MetricCard label="Kütle" value={(metrics.mass/1e6).toFixed(2)} unit="Mt" icon={Box} color={C.teal}/>
+            <MetricCard label="Hacim" value={(metrics.volume/1e6).toFixed(2)} unit="Mm³" icon={Layers} color={C.purple}/>
+          </div>
+        </aside>
+
+        {/* ── Merkez viewer ── */}
+        <main style={{ flex:1, position:'relative', minWidth:0, background: viewBg==='dark'?'#0F172A':'#EFF6FF' }}
+          ref={viewerRef}>
+
+          {/* Viewer araç çubuğu */}
+          <div style={{ position:'absolute', top:10, left:10, zIndex:30, display:'flex', gap:6 }}>
+            {viewMode==='slice' && (
+              <div style={{ display:'flex', gap:4, background:'rgba(255,255,255,0.95)',
+                            border:`1px solid ${C.border}`, borderRadius:6, padding:4,
+                            boxShadow:'0 2px 8px rgba(0,0,0,0.1)' }}>
+                {['x','y','z'].map(ax=>(
+                  <button key={ax} onClick={()=>setSliceAxis(ax)}
+                    style={{ padding:'3px 10px', borderRadius:4, border:'none', cursor:'pointer',
+                             fontSize:11, fontWeight:700,
+                             background: sliceAxis===ax ? C.teal : 'transparent',
+                             color: sliceAxis===ax ? '#fff' : C.textMid }}>
+                    {ax.toUpperCase()}
+                  </button>
+                ))}
+                <div style={{width:1,background:C.border,margin:'2px 4px'}}/>
+                <input type="range" min={0} max={(activeDisplay?.length??16)-1} value={sliceIdx}
+                  onChange={e=>{setSliceIdx(parseInt(e.target.value));stopSweep();}}
+                  style={{width:80,accentColor:C.teal}}/>
+                <span style={{fontSize:10,fontFamily:'monospace',color:C.header,minWidth:20,textAlign:'center'}}>
+                  {sliceIdx}
+                </span>
+              </div>
+            )}
+          </div>
+
+          <button onClick={toggleFs}
+            style={{ position:'absolute', top:10, right:10, zIndex:30,
+                     background:'rgba(255,255,255,0.95)', border:`1px solid ${C.border}`,
+                     borderRadius:6, padding:6, cursor:'pointer', color: C.header,
+                     boxShadow:'0 2px 8px rgba(0,0,0,0.1)' }}>
+            {isFs?<Minimize2 size={14}/>:<Maximize2 size={14}/>}
+          </button>
+
+          {/* Koordinat bilgisi */}
+          <div style={{ position:'absolute', bottom:10, left:10, zIndex:20,
+                        background:'rgba(255,255,255,0.9)', border:`1px solid ${C.border}`,
+                        borderRadius:4, padding:'4px 8px', fontSize:9, fontFamily:'monospace',
+                        color: C.textMid }}>
+            Domain: 480×480×480 m · Grid: {activeDisplay?.length??'—'}³
+          </div>
+
+          {/* İçerik */}
+          {viewMode==='3d' && (
+            <>
+              <Scene3D modelData={activeDisplay} isoThreshold={isoThreshold}
+                opacity={opacity3d} showTopo={showTopo} topoOpacity={topoOpacity} bgColor={viewBg}/>
+              {activeDisplay?.length > 0 && (
+                <ColorBar vmin={colorRange.min} vmax={colorRange.max} label="Cevher [0–1]"/>
+              )}
+              {!activeDisplay?.length && (
+                <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column',
+                              alignItems:'center', justifyContent:'center', color: viewBg==='dark'?'#475569':C.textMid }}>
+                  <Mountain size={64} style={{opacity:0.2,marginBottom:16}}/>
+                  <div style={{fontSize:14, fontWeight:600}}>Analiz çalıştırın</div>
+                  <div style={{fontSize:12,marginTop:4,opacity:0.7}}>Sol panelden veri seçip başlatın.</div>
+                </div>
+              )}
+            </>
+          )}
+          {viewMode==='slice' && (
+            <SliceView modelData={activeDisplay} axis={sliceAxis} idx={sliceIdx}
+              colorRange={colorRange} sweeping={sweeping}/>
+          )}
+          {viewMode==='anomaly' && (
+            <AnomalyMap modelData={activeDisplay} colorRange={colorRange}/>
+          )}
+          {viewMode==='stats' && (
+            <StatsPanel modelData={activeDisplay} colorRange={colorRange}
+              jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
+          )}
+        </main>
+
+        {/* ── Sağ panel ── */}
+        <aside style={{ width:280, background: C.surface, borderLeft:`1px solid ${C.border}`,
+                        display:'flex', flexDirection:'column', flexShrink:0 }}>
+
+          {/* Sağ panel sekme çubuğu */}
+          <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
+            {rightTabs.map(({id,label,icon:Icon})=>(
+              <button key={id} onClick={()=>setRightTab(id)}
+                style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
+                         gap:2, padding:'8px 4px', border:'none', cursor:'pointer',
+                         fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em',
+                         background: rightTab===id ? `${C.accent}12` : 'transparent',
+                         color: rightTab===id ? C.accent : C.textMid,
+                         borderBottom: rightTab===id ? `2px solid ${C.accent}` : '2px solid transparent',
+                         transition:'all 0.15s' }}>
+                <Icon size={14}/>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{flex:1,overflowY:'auto',minHeight:0}}>
+            {rightTab==='simpeg' && (
+              <div style={{padding:12,overflowY:'auto',height:'100%'}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                             letterSpacing:'0.06em',marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
+                  SimPEG Tikhonov Inversion
+                  {simpegAvailable===true && <Tag color={C.ok}>Kurulu</Tag>}
+                  {simpegAvailable===false && <Tag color={C.err}>Kurulu Değil</Tag>}
+                </div>
+
+                <div style={{fontSize:10,color:C.textMid,marginBottom:12,lineHeight:1.6,
+                             background:`${C.purple}08`,border:`1px solid ${C.purple}20`,
+                             borderRadius:5,padding:'6px 8px'}}>
+                  Kendi Adam solver'ımızdan farkı: analitik sensitivity matrix + Gauss-Newton
+                  iterasyonu + otomatik beta ayarı. Daha yavaş ama teorik olarak daha doğru.
+                </div>
+
+                {simpegAvailable===false && (
+                  <div style={{background:`${C.err}10`,border:`1px solid ${C.err}30`,
+                               borderRadius:5,padding:'8px 10px',marginBottom:12,fontSize:11,color:C.err}}>
+                    SimPEG kurulu değil. Backend'de çalıştırın:<br/>
+                    <code style={{fontFamily:'monospace',fontSize:10}}>pip install simpeg discretize</code>
+                  </div>
+                )}
+
+                <div style={{marginBottom:10}}>
+                  <div style={{fontSize:10,color:C.textMid,marginBottom:4}}>Grid çözünürlüğü</div>
+                  <Select value={simpegNbc} onChange={v=>setSimpegNbc(parseInt(v))} options={[
+                    {value:8, label:'8³ — hızlı test'},
+                    {value:16,label:'16³ — varsayılan'},
+                    {value:32,label:'32³ — yüksek (yavaş)'},
+                  ]}/>
+                </div>
+
+                <RangeRow label="Maksimum iterasyon" value={simpegIter} min={5} max={40} step={1}
+                  onChange={setSimpegIter} format={v=>`${Math.round(v)}`}/>
+                <RangeRow label="Smallness (α_s)" value={simpegAlphaS} min={-6} max={0} step={0.5}
+                  onChange={setSimpegAlphaS} format={v=>`10^${v.toFixed(1)}`}/>
+                <RangeRow label="Smoothness (α_x)" value={simpegAlphaX} min={-2} max={2} step={0.5}
+                  onChange={setSimpegAlphaX} format={v=>`10^${v.toFixed(1)}`}/>
+
+                <div style={{fontSize:10,color:C.textLow,marginBottom:8,fontStyle:'italic'}}>
+                  α_s küçük → pürüzlü/detaylı · α_s büyük → düzgün/basit<br/>
+                  α_x büyük → laterale yumuşak · χ-fact=1.0 (hedef misfit)
+                </div>
+
+                <Btn onClick={runSimPEG} disabled={simpegRunning||simpegAvailable===false}
+                  variant="teal" icon={simpegRunning?Loader2:GitCompare} style={{width:'100%',marginBottom:12}}>
+                  {simpegRunning?'SimPEG çalışıyor...':'SimPEG Inversion Başlat'}
+                </Btn>
+
+                {simpegResult && (
+                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:8}}>Sonuç</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
+                      {[
+                        {l:'Yöntem', v:'Tikhonov L2', c:C.purple},
+                        {l:'Grid',   v:`${simpegResult.mesh_info?.nbc}³`, c:C.teal},
+                        simpegResult.results?.density_kgm3 && {l:'Δρ max', v:`${simpegResult.results.density_kgm3?.toFixed(0)} kg/m³`, c:C.accent},
+                        simpegResult.results?.susceptibility_max && {l:'χ max', v:simpegResult.results.susceptibility_max?.toExponential(2)+' SI', c:C.ok},
+                      ].filter(Boolean).map(({l,v,c})=>(
+                        <div key={l} style={{background:C.surface,border:`1px solid ${C.border}`,
+                                             borderRadius:5,padding:'6px 8px'}}>
+                          <div style={{fontSize:9,color:C.textLow}}>{l}</div>
+                          <div style={{fontSize:12,fontWeight:700,fontFamily:'monospace',color:c}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Yakınsama */}
+                    {(simpegResult.history?.grav?.length>0 || simpegResult.history?.mag?.length>0) && (
+                      <div>
+                        <div style={{fontSize:10,fontWeight:600,color:C.header,marginBottom:4}}>
+                          Gauss-Newton yakınsaması
+                        </div>
+                        <ResponsiveContainer width="100%" height={80}>
+                          <LineChart margin={{top:2,right:4,left:-24,bottom:0}}>
+                            <YAxis tick={{fontSize:8}}/>
+                            <Tooltip contentStyle={{fontSize:9}}/>
+                            {simpegResult.history?.grav?.length>0 && (
+                              <Line data={simpegResult.history.grav.map((v,i)=>({i,f:v}))}
+                                dataKey="f" dot={false} stroke={C.teal} strokeWidth={2} name="Grav φ"/>
+                            )}
+                            {simpegResult.history?.mag?.length>0 && (
+                              <Line data={simpegResult.history.mag.map((v,i)=>({i,f:v}))}
+                                dataKey="f" dot={false} stroke={C.accent} strokeWidth={2} name="Mag φ"/>
+                            )}
+                          </LineChart>
+                        </ResponsiveContainer>
+                        <div style={{fontSize:9,color:C.textLow,marginTop:2}}>
+                          φ = φ_d + β·φ_m (data misfit + regularization)
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{marginTop:8,padding:'6px 8px',background:`${C.teal}08`,
+                                 borderRadius:5,fontSize:10,color:C.textMid}}>
+                      {simpegResult.method}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {rightTab==='uq' && (
+              <div style={{padding:12,overflowY:'auto',height:'100%'}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                             letterSpacing:'0.06em',marginBottom:4}}>Jeolojik Belirsizlik</div>
+                <div style={{fontSize:10,color:C.textMid,marginBottom:12,lineHeight:1.6,
+                             background:`${C.teal}08`,border:`1px solid ${C.teal}20`,
+                             borderRadius:5,padding:'6px 8px'}}>
+                  Farklı başlangıç noktalarından {uqNReal} bağımsız inversion çalıştırır.
+                  Sonuçların istatistiksel dağılımı jeolojik belirsizliği ölçer.
+                </div>
+
+                <RangeRow label="Realizasyon sayısı" value={uqNReal} min={3} max={15} step={1}
+                  onChange={setUqNReal} format={v=>`${Math.round(v)} adet`}/>
+                <RangeRow label="Veri gürültüsü (σ)" value={uqNoise} min={0} max={0.15} step={0.01}
+                  onChange={setUqNoise} format={v=>`%${(v*100).toFixed(0)}`}/>
+                <RangeRow label="İterasyon / realizasyon" value={uqIter} min={10} max={80} step={5}
+                  onChange={setUqIter} format={v=>`${Math.round(v)}`}/>
+
+                <div style={{fontSize:10,color:C.textLow,marginBottom:8,fontStyle:'italic'}}>
+                  Tahmini süre: ~{Math.round(uqNReal * uqIter * 0.5)} sn (GPU'ya göre değişir)
+                </div>
+
+                <Btn onClick={runUQ} disabled={uqRunning} variant="teal" icon={uqRunning?Loader2:Activity}
+                  style={{width:'100%',marginBottom:12}}>
+                  {uqRunning?`Çalışıyor... (${uqNReal} realizasyon)`:'Belirsizlik Analizi Başlat'}
+                </Btn>
+
+                {uqResult && (<>
+                  {/* Özet */}
+                  <div style={{background:`${C.ok}10`,border:`1px solid ${C.ok}30`,borderRadius:6,
+                               padding:10,marginBottom:12}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.ok,marginBottom:6}}>Sonuç Özeti</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6}}>
+                      {[
+                        {l:'Yüksek güven', v:`%${uqResult.summary.high_conf_pct}`, c:C.ok,
+                         tip:'CV<0.3 — tüm realizasyonlar tutarlı'},
+                        {l:'Düşük güven',  v:`%${uqResult.summary.low_conf_pct}`, c:C.err,
+                         tip:'CV>0.7 — realizasyonlar çelişiyor'},
+                        {l:'Ort. RMSE',    v:uqResult.summary.mean_rmse?.toFixed(4), c:C.teal, tip:''},
+                        {l:'RMSE std',     v:uqResult.summary.std_rmse?.toFixed(4),  c:C.purple, tip:''},
+                      ].map(({l,v,c,tip})=>(
+                        <div key={l} style={{background:C.surface,border:`1px solid ${C.border}`,
+                                             borderRadius:5,padding:'6px 8px'}} title={tip}>
+                          <div style={{fontSize:9,color:C.textLow}}>{l}</div>
+                          <div style={{fontSize:14,fontWeight:700,fontFamily:'monospace',color:c}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Realizasyon RMSE grafiği */}
+                    <div style={{marginTop:8}}>
+                      <div style={{fontSize:10,color:C.textMid,marginBottom:4}}>RMSE dağılımı (realizasyonlar)</div>
+                      <ResponsiveContainer width="100%" height={60}>
+                        <BarChart data={uqResult.summary.rmse_per_real.map((v,i)=>({r:`R${i+1}`,rmse:v}))}
+                          margin={{top:0,right:4,left:-24,bottom:0}}>
+                          <XAxis dataKey="r" tick={{fontSize:8}}/>
+                          <YAxis tick={{fontSize:8}}/>
+                          <Tooltip contentStyle={{fontSize:10}}/>
+                          <Bar dataKey="rmse" fill={C.teal} radius={[2,2,0,0]}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* Katman seçici */}
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:6,
+                                 textTransform:'uppercase',letterSpacing:'0.05em'}}>3D'de Görüntüle</div>
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
+                      {[
+                        {id:'mean', label:'Ortalama',   desc:'En olası model',      color:C.teal},
+                        {id:'std',  label:'Std Sapma',  desc:'Belirsizlik haritası', color:C.purple},
+                        {id:'cv',   label:'CV (norm.)', desc:'CV>0.5 güvenilmez',   color:C.accent},
+                        {id:'p10',  label:'P10 (kötü)', desc:'Kötümser senaryo',     color:C.err},
+                        {id:'p90',  label:'P90 (iyi)',  desc:'İyimser senaryo',      color:C.ok},
+                      ].map(({id,label,desc,color})=>(
+                        <button key={id} onClick={()=>applyUQLayer(id)}
+                          style={{padding:'7px 6px',borderRadius:5,cursor:'pointer',border:'none',
+                                  background: uqDisplayMode===id ? `${color}18` : C.bg,
+                                  outline: uqDisplayMode===id ? `2px solid ${color}` : 'none',
+                                  transition:'all 0.15s'}}>
+                          <div style={{fontSize:11,fontWeight:700,color}}>{label}</div>
+                          <div style={{fontSize:9,color:C.textLow,marginTop:1}}>{desc}</div>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Yakınsama eğrileri */}
+                  <div>
+                    <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:4,
+                                 textTransform:'uppercase',letterSpacing:'0.05em'}}>Realizasyon yakınsamaları</div>
+                    <ResponsiveContainer width="100%" height={100}>
+                      <LineChart margin={{top:2,right:4,left:-24,bottom:0}}>
+                        <XAxis type="number" dataKey="iter" tick={{fontSize:8}} hide/>
+                        <YAxis tick={{fontSize:8,fill:C.textLow}}/>
+                        <Tooltip contentStyle={{fontSize:9}}/>
+                        {uqResult.histories.map((h,i)=>(
+                          <Line key={i} data={h.convergence.map((v,k)=>({iter:k,misfit:v}))}
+                            dataKey="misfit" dot={false} strokeWidth={1.2}
+                            stroke={`hsl(${180+i*30},60%,50%)`} name={`R${i+1}`}/>
+                        ))}
+                      </LineChart>
+                    </ResponsiveContainer>
+                    <div style={{fontSize:9,color:C.textLow,marginTop:4}}>
+                      Eğriler birbirine yakınsa → veri model çözümünü iyi kısıtlıyor
+                    </div>
+                  </div>
+                </>)}
+              </div>
+            )}
+            {rightTab==='geom' && (
+              <div style={{padding:12,overflowY:'auto'}}>
+                <GeometryPanel
+                  onGenerated={(d, filename)=>{
+                    updateModel(d.model_data);
+                    setLastRun('physics');
+                    setRightTab('stats');
+                    if (filename) {
+                      setSelY(filename);
+                      fetchDatasets();
+                    }
+                  }}
+                  log={log}
+                />
+              </div>
+            )}
+            {rightTab==='stats' && (
+              <StatsPanel modelData={activeDisplay} colorRange={colorRange}
+                jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
+            )}
+            {rightTab==='filter' && (
+              <div style={{padding:12}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                             letterSpacing:'0.06em',marginBottom:10}}>Ham Veri Filtreleme</div>
+                <FilterPanel modelData={modelData} onFiltered={data=>{
+                  setFilteredData(data);
+                  const flat=data.flat(2);
+                  setColorRange({min:Math.min(...flat),max:Math.max(...flat)});
+                  log('ok','Filtre uygulandı.');
+                }}/>
+                {filteredData && (
+                  <div style={{marginTop:8}}>
+                    <Btn onClick={()=>{setFilteredData(null);const flat=modelData.flat(2);
+                      setColorRange({min:Math.min(...flat),max:Math.max(...flat)});}}
+                      icon={RefreshCw} variant="ghost" size="sm" style={{width:'100%',color:C.err}}>
+                      Filtreyi Sıfırla
+                    </Btn>
+                  </div>
+                )}
+              </div>
+            )}
+            {rightTab==='export' && (
+              <div style={{padding:12}}>
+                <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
+                             letterSpacing:'0.06em',marginBottom:10}}>Dışa Aktarma</div>
+                <ExportPanel modelData={activeDisplay} colorRange={colorRange} logs={logs}/>
+              </div>
+            )}
+          </div>
+
+          {/* Log konsolu */}
+          <div style={{ height:180, borderTop:`1px solid ${C.border}`, display:'flex', flexDirection:'column' }}>
+            <div style={{ padding:'5px 10px', background: C.header, display:'flex', alignItems:'center', gap:5 }}>
+              <AlertCircle size={11} color={C.accentL}/>
+              <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.8)',
+                            textTransform:'uppercase',letterSpacing:'0.06em'}}>Log</span>
+            </div>
+            <div style={{ flex:1, overflowY:'auto', background:'#0F172A', padding:'6px 8px',
+                          fontFamily:'monospace', fontSize:10, lineHeight:1.6 }}>
+              {logs.map((l,i)=>(
+                <div key={i} style={{ display:'flex', gap:6 }}>
+                  <span style={{color:'#475569',flexShrink:0}}>{l.t}</span>
+                  <span style={{color:l.level==='err'?'#FC8181':l.level==='ok'?'#68D391':'#A0AEC0'}}>
+                    {l.msg}
+                  </span>
                 </div>
               ))}
             </div>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   );

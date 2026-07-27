@@ -1,0 +1,217 @@
+Metadata-Version: 2.1
+Name: discretize
+Version: 0.12.0
+Summary: Discretization tools for finite volume and inverse problems
+Keywords: finite volume,discretization,pde,ode
+Author-Email: SimPEG developers <rowanc1@gmail.com>
+License: The MIT License (MIT)
+         
+         Copyright (c) 2013-2025 SimPEG Developers
+         
+         Permission is hereby granted, free of charge, to any person obtaining a copy of
+         this software and associated documentation files (the "Software"), to deal in
+         the Software without restriction, including without limitation the rights to
+         use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+         the Software, and to permit persons to whom the Software is furnished to do so,
+         subject to the following conditions:
+         
+         The above copyright notice and this permission notice shall be included in all
+         copies or substantial portions of the Software.
+         
+         THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+         IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+         FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+         COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+         IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+         CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+         
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Programming Language :: Cython
+Classifier: Programming Language :: C++
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Unix
+Classifier: Operating System :: MacOS
+Classifier: Natural Language :: English
+Project-URL: Homepage, https://simpeg.xyz
+Project-URL: Documentation, https://discretize.simpeg.xyz
+Project-URL: Repository, http://github.com/simpeg/discretize.git
+Requires-Python: >=3.11
+Requires-Dist: numpy>=1.22.4
+Requires-Dist: scipy>=1.12
+Provides-Extra: plot
+Requires-Dist: matplotlib; extra == "plot"
+Provides-Extra: viz
+Requires-Dist: vtk>=6; extra == "viz"
+Requires-Dist: pyvista; extra == "viz"
+Provides-Extra: omf
+Requires-Dist: omf; extra == "omf"
+Provides-Extra: all
+Requires-Dist: discretize[omf,plot,viz]; extra == "all"
+Provides-Extra: doc
+Requires-Dist: sphinx==8.1.3; extra == "doc"
+Requires-Dist: pydata-sphinx-theme==0.16.1; extra == "doc"
+Requires-Dist: sphinx-gallery==0.19.0; extra == "doc"
+Requires-Dist: numpydoc==1.9.0; extra == "doc"
+Requires-Dist: jupyter; extra == "doc"
+Requires-Dist: graphviz; extra == "doc"
+Requires-Dist: pillow; extra == "doc"
+Requires-Dist: pooch; extra == "doc"
+Requires-Dist: discretize[all]; extra == "doc"
+Provides-Extra: test
+Requires-Dist: pytest; extra == "test"
+Requires-Dist: pytest-cov; extra == "test"
+Requires-Dist: sympy; extra == "test"
+Requires-Dist: discretize[all,doc]; extra == "test"
+Provides-Extra: style
+Requires-Dist: black==24.3.0; extra == "style"
+Requires-Dist: flake8==7.0.0; extra == "style"
+Requires-Dist: flake8-bugbear==23.12.2; extra == "style"
+Requires-Dist: flake8-builtins==2.2.0; extra == "style"
+Requires-Dist: flake8-mutable==1.2.0; extra == "style"
+Requires-Dist: flake8-rst-docstrings==0.3.0; extra == "style"
+Requires-Dist: flake8-docstrings==1.7.0; extra == "style"
+Requires-Dist: flake8-pyproject==1.2.3; extra == "style"
+Provides-Extra: build
+Requires-Dist: meson-python>=0.15.0; extra == "build"
+Requires-Dist: meson; extra == "build"
+Requires-Dist: ninja; extra == "build"
+Requires-Dist: numpy>=2.0.0rc1; extra == "build"
+Requires-Dist: cython>=3.1.0; extra == "build"
+Requires-Dist: setuptools_scm; extra == "build"
+Description-Content-Type: text/x-rst
+
+.. image:: https://raw.github.com/simpeg/discretize/main/docs/images/discretize-logo.png
+    :alt: Discretize Logo
+
+discretize
+==========
+
+.. image:: https://img.shields.io/pypi/v/discretize.svg
+    :target: https://pypi.python.org/pypi/discretize
+    :alt: Latest PyPI version
+
+.. image:: https://anaconda.org/conda-forge/discretize/badges/version.svg
+    :target: https://anaconda.org/conda-forge/discretize
+    :alt: Latest conda-forge version
+
+.. image:: https://img.shields.io/github/license/simpeg/simpeg.svg
+    :target: https://github.com/simpeg/discretize/blob/main/LICENSE
+    :alt: MIT license
+
+.. image:: https://dev.azure.com/simpeg/discretize/_apis/build/status/simpeg.discretize?branchName=main
+    :target: https://dev.azure.com/simpeg/discretize/_build/latest?definitionId=1&branchName=main
+    :alt: Azure pipelines build status
+
+.. image:: https://codecov.io/gh/simpeg/discretize/branch/main/graph/badge.svg
+    :target: https://codecov.io/gh/simpeg/discretize
+    :alt: Coverage status
+
+.. image:: https://zenodo.org/badge/DOI/10.5281/zenodo.596411.svg
+   :target: https://doi.org/10.5281/zenodo.596411
+
+.. image:: https://img.shields.io/discourse/users?server=http%3A%2F%2Fsimpeg.discourse.group%2F
+    :target: http://simpeg.discourse.group/
+
+.. image:: https://img.shields.io/badge/simpeg-purple?logo=mattermost&label=Mattermost
+    :target: https://mattermost.softwareunderground.org/simpeg
+
+.. image:: https://img.shields.io/badge/Youtube%20channel-GeoSci.xyz-FF0000.svg?logo=youtube
+    :target: https://www.youtube.com/channel/UCBrC4M8_S4GXhyHht7FyQqw
+
+
+**discretize** - A python package for finite volume discretization.
+
+The vision is to create a package for finite volume simulation with a
+focus on large scale inverse problems.
+This package has the following features:
+
+* modular with respect to the spacial discretization
+* built with the inverse problem in mind
+* supports 1D, 2D and 3D problems
+* access to sparse matrix operators
+* access to derivatives to mesh variables
+
+.. image:: https://raw.githubusercontent.com/simpeg/figures/master/finitevolume/cell-anatomy-tensor.png
+
+Currently, discretize supports:
+
+* Tensor Meshes (1D, 2D and 3D)
+* Cylindrically Symmetric Meshes
+* QuadTree and OcTree Meshes (2D and 3D)
+* Logically Rectangular Meshes (2D and 3D)
+* Triangular (2D) and Tetrahedral (3D) Meshes
+
+Installing
+^^^^^^^^^^
+**discretize** is on conda-forge, and is the recommended installation method.
+
+.. code:: shell
+
+    conda install -c conda-forge discretize
+
+Prebuilt wheels of **discretize** are on pypi for most platforms
+
+.. code:: shell
+
+    pip install discretize
+
+To install from source, note this requires a `c++` compiler supporting the `c++17` standard.
+
+.. code:: shell
+
+    git clone https://github.com/simpeg/discretize.git
+    cd discretize
+    pip install .
+
+Citing discretize
+^^^^^^^^^^^^^^^^^
+
+Please cite the SimPEG paper when using discretize in your work:
+
+
+    Cockett, R., Kang, S., Heagy, L. J., Pidlisecky, A., & Oldenburg, D. W. (2015). SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications. Computers & Geosciences.
+
+**BibTex:**
+
+.. code:: Latex
+
+    @article{cockett2015simpeg,
+      title={SimPEG: An open source framework for simulation and gradient based parameter estimation in geophysical applications},
+      author={Cockett, Rowan and Kang, Seogi and Heagy, Lindsey J and Pidlisecky, Adam and Oldenburg, Douglas W},
+      journal={Computers \& Geosciences},
+      year={2015},
+      publisher={Elsevier}
+    }
+
+Links
+^^^^^
+
+Website:
+http://simpeg.xyz
+
+Documentation:
+http://discretize.simpeg.xyz
+
+Code:
+https://github.com/simpeg/discretize
+
+Tests:
+https://dev.azure.com/simpeg/discretize/_build
+
+Bugs & Issues:
+https://github.com/simpeg/discretize/issues
+
+Questions:
+http://simpeg.discourse.group/
+
+Chat:
+https://mattermost.softwareunderground.org/simpeg
+

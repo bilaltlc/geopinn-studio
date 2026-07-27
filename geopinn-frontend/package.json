@@ -1,7 +1,10 @@
 {
-  "name": "geopinn-frontend",
-  "version": "0.0.0",
-  "description": "GeoPINN Studio - Uygulamalı Jeofizik Masaüstü Uygulaması",
+  "name": "geopinn-studio",
+  "version": "3.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bilaltlc/geopinn-studio.git"
+  },
   "type": "module",
   "main": "main.cjs",
   "scripts": {
@@ -10,7 +13,10 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "predist": "cross-env SERVER_PY_PATH=../geopinn-backend/server.py node scripts/build-backend.cjs",
-    "dist": "npm run build && electron-builder"
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -19,7 +25,6 @@
     "@tailwindcss/vite": "^4.3.2",
     "autoprefixer": "^10.5.2",
     "lucide-react": "^1.24.0",
-    "plotly.js": "^3.7.0",
     "plotly.js-gl3d-dist-min": "^3.7.0",
     "postcss": "^8.5.19",
     "react": "^19.2.7",
@@ -46,11 +51,15 @@
   "build": {
     "appId": "com.geopinn.studio",
     "productName": "GeoPINN Studio",
+    "copyright": "GeoPINN Studio 3.0",
     "directories": {
-      "output": "dist-electron"
+      "output": "dist-electron",
+      "buildResources": "build"
     },
     "files": [
-      "main.cjs"
+      "main.cjs",
+      "build/**/*",
+      "preload.cjs"
     ],
     "extraResources": [
       {
@@ -69,8 +78,58 @@
       }
     ],
     "win": {
-      "target": ["zip", "dir"],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "GeoPINN Studio"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.developer-tools"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icons",
+      "category": "Science"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "bilaltlc",
+      "repo": "geopinn-studio",
+      "releaseType": "release"
     }
   }
 }

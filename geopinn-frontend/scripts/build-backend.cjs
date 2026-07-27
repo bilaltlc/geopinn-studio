@@ -1,107 +1,89 @@
-// scripts/build-backend.cjs
-//
-// PyInstaller ile server.py -> server.exe derleyip, electron-builder'ın
-// extraResources ayarının beklediği "backend/server/server.exe" konumuna
-// otomatik kopyalar. Bu adımı elle yapıp unutmak yerine artık npm run dist
-// öncesinde (predist) otomatik çalışır.
-//
-// Kullanım:
-//   node scripts/build-backend.cjs
-//
-// Ortam değişkenleriyle özelleştirme:
-//   SERVER_PY_PATH   -> server.py dosyasının yolu (varsayılan: ../server.py)
-//   BACKEND_OUT_DIR  -> hedef klasör (varsayılan: <proje kökü>/backend/server)
-//   PYTHON_BIN       -> python çalıştırılabilir adı/yolu (varsayılan: Windows'ta "python", diğerlerinde "python3")
-//   EXCLUDE_MODULES  -> virgülle ayrılmış, analiz dışı bırakılacak modüller
-//                       (varsayılan: "tensorflow" — server.py bunu kullanmıyor ama
-//                       bazı Python kurulumlarında bozuk/eksik bir tensorflow paketi
-//                       PyInstaller'ın hook taramasını çökertebiliyor)
+'use strict';
 
+const { execSync } = require('child_process');
 const path = require('path');
-const fs = require('fs');
-const { spawnSync } = require('child_process');
+const fs   = require('fs');
 
-const PROJECT_ROOT = path.resolve(__dirname, '..');
-const SERVER_PY = process.env.SERVER_PY_PATH || path.join(PROJECT_ROOT, 'server.py');
-const BACKEND_OUT_DIR = process.env.BACKEND_OUT_DIR || path.join(PROJECT_ROOT, 'backend', 'server');
-const PYINSTALLER_WORK = path.join(PROJECT_ROOT, '.pyinstaller-build');
-const PYINSTALLER_DIST = path.join(PYINSTALLER_WORK, 'dist');
-const DEFAULT_PYTHON = process.platform === 'win32' ? 'python' : 'python3';
-const PYTHON_BIN = process.env.PYTHON_BIN || DEFAULT_PYTHON;
-const EXCLUDE_MODULES = (process.env.EXCLUDE_MODULES || 'tensorflow')
-  .split(',')
-  .map((m) => m.trim())
-  .filter(Boolean);
+const serverPyPath = process.env.SERVER_PY_PATH
+  || path.resolve(__dirname, '..', 'geopinn-backend', 'server.py');
 
-function fail(msg) {
-  console.error(`\n[build-backend] HATA: ${msg}\n`);
+if (!fs.existsSync(serverPyPath)) {
+  console.error('[build-backend] server.py bulunamadı:', serverPyPath);
   process.exit(1);
 }
 
-function main() {
-  if (!fs.existsSync(SERVER_PY)) {
-    fail(
-      `server.py bulunamadı: ${SERVER_PY}\n` +
-      `SERVER_PY_PATH ortam değişkeniyle doğru yolu belirtin, örn:\n` +
-      `  SERVER_PY_PATH=./backend-src/server.py node scripts/build-backend.cjs`
-    );
-  }
+const serverDir  = path.dirname(path.resolve(serverPyPath));
+const enginesDir = path.join(serverDir, 'engines');
+const outDir     = path.resolve(__dirname, '..', 'backend');
+fs.mkdirSync(outDir, { recursive: true });
 
-  const excludeArgs = EXCLUDE_MODULES.flatMap((m) => ['--exclude-module', m]);
-  if (excludeArgs.length) {
-    console.log(`[build-backend] Analiz dışı bırakılan modüller: ${EXCLUDE_MODULES.join(', ')}`);
-  }
+console.log('[build-backend] serverDir :', serverDir);
+console.log('[build-backend] enginesDir:', enginesDir);
+console.log('[build-backend] outDir    :', outDir);
 
-  // "pyinstaller" komutu genelde pip'in Scripts/bin klasörü PATH'e eklenmediği
-  // için bulunamıyor. "python -m PyInstaller" ise Python modül olarak
-  // kurulduğu sürece PATH'ten bağımsız çalışır — bu yüzden onu tercih ediyoruz.
-  console.log(`[build-backend] "${PYTHON_BIN} -m PyInstaller" ile derleniyor: ${SERVER_PY}`);
-  const result = spawnSync(
-    PYTHON_BIN,
-    [
-      '-m', 'PyInstaller',
-      '--onefile',
-      '--name', 'server',
-      '--distpath', PYINSTALLER_DIST,
-      '--workpath', path.join(PYINSTALLER_WORK, 'build'),
-      '--specpath', PYINSTALLER_WORK,
-      '--noconfirm',
-      ...excludeArgs,
-      SERVER_PY,
-    ],
-    { stdio: 'inherit', shell: process.platform === 'win32' }
-  );
-
-  if (result.error) {
-    fail(
-      `"${PYTHON_BIN}" çalıştırılamadı (${result.error.message}).\n` +
-      `PYTHON_BIN ortam değişkeniyle doğru python yolunu belirtin, örn:\n` +
-      `  PYTHON_BIN="C:/Users/telci/AppData/Local/Programs/Python/Python312/python.exe"`
-    );
-  }
-  if (result.status !== 0) {
-    fail(
-      `PyInstaller derlemesi başarısız oldu (exit code ${result.status}).\n` +
-      `Olası nedenler:\n` +
-      `  1) PyInstaller kurulu değil -> ${PYTHON_BIN} -m pip install pyinstaller\n` +
-      `  2) Bozuk bir bağımlılık paketi (örn. tensorflow) analiz sırasında hata veriyor ->\n` +
-      `     EXCLUDE_MODULES ortam değişkenine o paketin adını ekleyin (virgülle ayırarak).`
-    );
-  }
-
-  const exeName = process.platform === 'win32' ? 'server.exe' : 'server';
-  const builtExe = path.join(PYINSTALLER_DIST, exeName);
-
-  if (!fs.existsSync(builtExe)) {
-    fail(`Derleme bitti ama beklenen çıktı yok: ${builtExe}`);
-  }
-
-  fs.mkdirSync(BACKEND_OUT_DIR, { recursive: true });
-  const dest = path.join(BACKEND_OUT_DIR, exeName);
-  fs.copyFileSync(builtExe, dest);
-
-  console.log(`[build-backend] Kopyalandı: ${builtExe}\n                -> ${dest}`);
-  console.log('[build-backend] Tamamlandı. "npm run dist" artık bu exe\'yi pakete gömecek.');
+if (!fs.existsSync(enginesDir)) {
+  console.error('[build-backend] engines/ klasörü bulunamadı:', enginesDir);
+  process.exit(1);
 }
 
-main();
+function findPython() {
+  for (const bin of ['python', 'python3', 'py']) {
+    try {
+      const v = execSync(`${bin} --version 2>&1`, { stdio: 'pipe' }).toString();
+      if (v.includes('Python 3')) return bin;
+    } catch (_) {}
+  }
+  return null;
+}
+
+const py = findPython();
+if (!py) { console.error('[build-backend] Python 3 bulunamadı.'); process.exit(1); }
+console.log('[build-backend] Python:', py);
+
+try { execSync(`${py} -m PyInstaller --version`, { stdio: 'pipe' }); }
+catch (_) { execSync(`${py} -m pip install pyinstaller`, { stdio: 'inherit' }); }
+
+const hidden = [
+  'engines.gravity_prism', 'engines.magnetic_prism', 'engines.csamt_1d',
+  'engines.harmonica_validation', 'engines.fvm_core',
+  'engines.gravity_fvm', 'engines.magnetic_fvm', 'engines.petrophysics',
+  'torch', 'torch.nn', 'torch.nn.functional', 'torch.optim',
+  'scipy.ndimage', 'scipy.sparse', 'scipy.sparse.linalg', 'scipy.interpolate',
+  'fastapi', 'uvicorn', 'uvicorn.logging',
+  'uvicorn.loops', 'uvicorn.loops.auto',
+  'uvicorn.protocols', 'uvicorn.protocols.http', 'uvicorn.protocols.http.auto',
+  'uvicorn.lifespan', 'uvicorn.lifespan.on',
+  'pydantic', 'numpy', 'harmonica',
+].map(m => `--hidden-import=${m}`).join(' ');
+
+// TF/Keras hook'ları çöktüğü için dışla
+const excluded = [
+  'tensorflow', 'tensorflow_core', 'keras',
+  'tensorboard', 'tf2onnx', 'jax', 'flax',
+].map(m => `--exclude-module=${m}`).join(' ');
+
+const addData = `--add-data "${enginesDir};engines"`;
+
+const cmd = [
+  `${py} -m PyInstaller`,
+  '--noconfirm',
+  '--onedir',
+  `--distpath "${outDir}"`,
+  `--workpath "${path.join(outDir, '_build_tmp')}"`,
+  `--specpath "${path.join(outDir, '_specs')}"`,
+  '--name server',
+  hidden,
+  excluded,
+  addData,
+  `"${path.resolve(serverPyPath)}"`,
+].join(' ');
+
+console.log('\n[build-backend] Komut:\n', cmd, '\n');
+
+try {
+  execSync(cmd, { stdio: 'inherit', cwd: serverDir });
+  console.log('\n[build-backend] ✓ Tamamlandı:', outDir);
+} catch (e) {
+  console.error('[build-backend] Başarısız:', e.message);
+  process.exit(1);
+}
