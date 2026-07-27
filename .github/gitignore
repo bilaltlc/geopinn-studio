@@ -1,0 +1,38 @@
+# Node
+node_modules/
+npm-debug.log*
+
+# Build çıktıları
+dist/
+dist-electron/
+backend/_build_tmp/
+backend/_specs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+*.egg-info/
+
+# Veri dosyaları (büyük — Git LFS kullan veya dışarıda tut)
+uploads/*.npy
+analyses/
+
+# Electron
+.electron/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Env
+.env
+.env.local

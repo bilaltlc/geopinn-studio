@@ -1,103 +1,137 @@
-const { app, BrowserWindow, session, dialog } = require('electron');
+'use strict';
+
+const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const path  = require('path');
+const fs    = require('fs');
+const http  = require('http');
 const { spawn } = require('child_process');
-const path = require('path');
-const fs = require('fs');
 
-let backendProcess = null;
-let mainWindow;
+// ── Ayar dosyası (kullanıcı klasöründe, build'den bağımsız) ──────────────
+const CONFIG_PATH = path.join(app.getPath('userData'), 'geopinn-config.json');
 
-function getBackendPath() {
-  // Geliştirmede vs paketlenmiş uygulamada exe yolu farklı olur
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'backend', 'server', 'server.exe');
-  }
-  return path.join(__dirname, 'resources', 'backend', 'server', 'server.exe');
-}
-
-function startBackend() {
-  const backendPath = getBackendPath();
-
-  // Kopyalama adımı atlanınca (backend/server/server.exe eksikse) spawn
-  // sessizce başarısız oluyordu; windowsHide yüzünden hiçbir konsolda
-  // görünmüyordu. Artık eksikse kullanıcıya görünür bir hata gösteriyoruz.
-  if (!fs.existsSync(backendPath)) {
-    const msg = `Backend çalıştırılabilir dosyası bulunamadı:\n${backendPath}\n\n` +
-      `PyInstaller çıktısı (server.exe) "backend/server/" klasörüne kopyalanmamış olabilir.\n` +
-      `"npm run predist" (scripts/build-backend.cjs) betiğini çalıştırıp tekrar paketleyin.`;
-    console.error('[backend] ' + msg);
-    dialog.showErrorBox('Backend Başlatılamadı', msg);
-    return;
-  }
-
-  backendProcess = spawn(backendPath, [], {
-    cwd: path.dirname(backendPath),
-    windowsHide: true, // arka planda çalışsın, konsol penceresi açılmasın
-  });
-
-  backendProcess.stdout.on('data', (data) => {
-    console.log(`[backend] ${data}`);
-  });
-
-  backendProcess.stderr.on('data', (data) => {
-    console.error(`[backend-err] ${data}`);
-  });
-
-  backendProcess.on('close', (code) => {
-    console.log(`Backend process exited with code ${code}`);
-    backendProcess = null;
-  });
-
-  backendProcess.on('error', (err) => {
-    console.error('Backend process başlatılamadı:', err);
-    dialog.showErrorBox('Backend Başlatılamadı', `${backendPath}\n\n${err.message}`);
-  });
-}
-
-function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill(); // Windows'ta SIGTERM eşdeğeri
-    backendProcess = null;
-  }
-}
-
-function getFrontendIndexPath() {
-  // Paketlenmiş uygulamada frontend, extraResources ile 'frontend-dist' klasörüne kopyalanıyor
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'frontend-dist', 'index.html');
-  }
-  // Geliştirmede Vite'in build çıktısı olan 'dist' klasörünü kullan
-  return path.join(__dirname, 'dist', 'index.html');
-}
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    webPreferences: {
-      webSecurity: false,
-      nodeIntegration: false,
-      contextIsolation: true
+function loadConfig() {
+  try {
+    if (fs.existsSync(CONFIG_PATH)) {
+      return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
     }
-  });
-  // loadURL ve loadFile art arda çağrılıyordu; loadFile her zaman loadURL'i
-  // geçersiz kılıyordu. Artık paketlenme durumuna göre yalnızca biri çalışıyor.
-  if (app.isPackaged) {
-    mainWindow.loadFile(getFrontendIndexPath());
-  } else {
-    mainWindow.loadURL('http://localhost:5173');
-  }
+  } catch(e) {}
+  return { colabUrl: '', backendMode: 'local' };
 }
 
-app.whenReady().then(() => {
-  startBackend();
-  createWindow();
+function saveConfig(cfg) {
+  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2), 'utf8');
+}
+
+// ── Konfigürasyon ──────────────────────────────────────────────────────────
+const BACKEND_PORT = 8000;
+const IS_DEV       = !app.isPackaged;
+
+const FRONTEND_DIST = app.isPackaged
+  ? path.join(process.resourcesPath, 'frontend-dist')
+  : path.join(__dirname, 'dist');
+
+const BACKEND_EXE = app.isPackaged
+  ? path.join(process.resourcesPath, 'backend', 'server', 'server.exe')
+  : null;
+
+let mainWindow  = null;
+let backendProc = null;
+
+// ── Backend başlatma ───────────────────────────────────────────────────────
+function startBackend(cfg) {
+  if (cfg.backendMode === 'colab' && cfg.colabUrl) {
+    console.log('[main] Colab modu — yerel backend başlatılmıyor.');
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    let proc;
+    if (BACKEND_EXE && fs.existsSync(BACKEND_EXE)) {
+      proc = spawn(BACKEND_EXE,
+        ['--host', '127.0.0.1', '--port', String(BACKEND_PORT)],
+        { cwd: path.dirname(BACKEND_EXE), stdio: 'pipe' });
+    } else {
+      const serverPy = path.join(__dirname, '..', 'geopinn-backend', 'server.py');
+      if (!fs.existsSync(serverPy)) { return resolve(); }
+      proc = spawn('python', ['-m', 'uvicorn', 'server:app',
+        '--host', '127.0.0.1', '--port', String(BACKEND_PORT)],
+        { cwd: path.dirname(serverPy), stdio: 'pipe' });
+    }
+    backendProc = proc;
+    proc.stdout?.on('data', d => console.log('[backend]', d.toString().trim()));
+    proc.stderr?.on('data', d => console.error('[backend]', d.toString().trim()));
+
+    const deadline = Date.now() + 30000;
+    const poll = () => {
+      http.get(`http://127.0.0.1:${BACKEND_PORT}/api/health`, res => {
+        if (res.statusCode === 200) resolve();
+        else if (Date.now() < deadline) setTimeout(poll, 500);
+        else resolve();   // hata olsa da devam et
+      }).on('error', () => {
+        if (Date.now() < deadline) setTimeout(poll, 500);
+        else resolve();
+      });
+    };
+    setTimeout(poll, 800);
+  });
+}
+
+// ── IPC handler'ları ───────────────────────────────────────────────────────
+ipcMain.handle('get-config',    ()      => loadConfig());
+ipcMain.handle('save-config',   (_, cfg) => { saveConfig(cfg); return true; });
+ipcMain.handle('get-version',   ()      => app.getVersion());
+ipcMain.handle('restart-backend', async () => {
+  if (backendProc) { backendProc.kill(); backendProc = null; }
+  const cfg = loadConfig();
+  await startBackend(cfg);
+  return true;
 });
 
-app.on('before-quit', () => {
-  stopBackend();
+// ── Pencere ────────────────────────────────────────────────────────────────
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1440, height: 920, minWidth: 960, minHeight: 640,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+    frame: process.platform !== 'darwin',
+    show:  false,
+    backgroundColor: '#F0F2F5',
+    icon: path.join(__dirname, 'build', 'icon.ico'),
+  });
+
+  mainWindow.once('ready-to-show', () => mainWindow.show());
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    shell.openExternal(url); return { action: 'deny' };
+  });
+
+  if (IS_DEV) {
+    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.webContents.openDevTools();
+  } else {
+    mainWindow.loadFile(path.join(FRONTEND_DIST, 'index.html'));
+  }
+  mainWindow.on('closed', () => { mainWindow = null; });
+}
+
+app.whenReady().then(async () => {
+  const cfg = loadConfig();
+  await startBackend(cfg);
+  createWindow();
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+  });
 });
 
 app.on('window-all-closed', () => {
-  stopBackend();
-  if (process.platform !== 'darwin') app.quit();
+  if (process.platform !== 'darwin') {
+    if (backendProc) backendProc.kill();
+    app.quit();
+  }
+});
+
+app.on('before-quit', () => {
+  if (backendProc) { backendProc.kill(); backendProc = null; }
 });

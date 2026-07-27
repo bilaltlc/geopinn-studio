@@ -1,0 +1,141 @@
+Metadata-Version: 2.4
+Name: pymatsolver
+Version: 0.4.0
+Summary: pymatsolver: Matrix Solvers for Python
+Author-email: SimPEG developers <rowanc1@gmail.com>
+License: The MIT License (MIT)
+        
+        Copyright (c) 2013-2016 Rowan Cockett
+        
+        Permission is hereby granted, free of charge, to any person obtaining a copy of
+        this software and associated documentation files (the "Software"), to deal in
+        the Software without restriction, including without limitation the rights to
+        use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
+        the Software, and to permit persons to whom the Software is furnished to do so,
+        subject to the following conditions:
+        
+        The above copyright notice and this permission notice shall be included in all
+        copies or substantial portions of the Software.
+        
+        THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+        IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
+        FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
+        COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+        IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+        CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+        
+Project-URL: Homepage, https://simpeg.xyz
+Project-URL: Documentation, https://simpeg.xyz/pymatsolver/
+Project-URL: Repository, https://github.com/simpeg/pymatsolver
+Keywords: matrix solver
+Classifier: Development Status :: 4 - Beta
+Classifier: Intended Audience :: Developers
+Classifier: Intended Audience :: Science/Research
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python
+Classifier: Topic :: Scientific/Engineering
+Classifier: Topic :: Scientific/Engineering :: Mathematics
+Classifier: Topic :: Scientific/Engineering :: Physics
+Classifier: Operating System :: Microsoft :: Windows
+Classifier: Operating System :: POSIX
+Classifier: Operating System :: Unix
+Classifier: Operating System :: MacOS
+Classifier: Natural Language :: English
+Requires-Python: >=3.10
+Description-Content-Type: text/x-rst
+License-File: LICENSE
+Requires-Dist: numpy>=1.21
+Requires-Dist: scipy>=1.8
+Requires-Dist: packaging
+Provides-Extra: pardiso
+Requires-Dist: pydiso; extra == "pardiso"
+Provides-Extra: mumps
+Requires-Dist: python-mumps; extra == "mumps"
+Provides-Extra: docs
+Requires-Dist: sphinx; extra == "docs"
+Requires-Dist: numpydoc; extra == "docs"
+Requires-Dist: pydata-sphinx-theme; extra == "docs"
+Provides-Extra: tests
+Requires-Dist: pytest; extra == "tests"
+Requires-Dist: pytest-cov; extra == "tests"
+Provides-Extra: build
+Requires-Dist: setuptools_scm>=8; extra == "build"
+Requires-Dist: setuptools>=64; extra == "build"
+Dynamic: license-file
+
+pymatsolver
+***********
+
+.. image:: https://img.shields.io/pypi/v/pymatsolver.svg
+    :target: https://pypi.python.org/pypi/pymatsolver
+    :alt: Latest PyPI version
+
+.. image:: https://img.shields.io/badge/license-MIT-blue.svg
+    :target: https://github.com/simpeg/pymatsolver/blob/master/LICENSE
+    :alt: MIT license.
+
+.. image:: https://codecov.io/gh/simpeg/pymatsolver/branch/main/graph/badge.svg?token=8uQoxzxf3r
+    :target: https://codecov.io/gh/simpeg/pymatsolver
+    :alt: Coverage status
+
+
+A (sparse) matrix solver for python.
+
+Solving Ax = b should be as easy as:
+
+.. code-block:: python
+
+    Ainv = Solver(A)
+    x = Ainv * b
+
+In pymatsolver we provide a number of wrappers to existing numerical packages. Nothing fancy here.
+
+Solvers Available
+=================
+
+All solvers work with :code:`scipy.sparse` matricies, and a single or multiple right hand sides using :code:`numpy`:
+
+* L/U Triangular Solves
+* Wrapping of SciPy matrix solvers (direct and indirect)
+* Pardiso solvers
+* Mumps solvers
+
+
+Installing Solvers
+==================
+Often, there are faster solvers available for your system than the default scipy factorizations available.
+pymatsolver provides a consistent interface to both MKL's ``Pardiso`` routines and the ``MUMPS`` solver package. To
+make use of these we use intermediate wrappers for the libraries that must be installed separately.
+
+Pardiso
+-------
+The Pardiso interface is recommended for Intel processor based systems. The interface is enabled by
+the ``pydiso`` python package, which can be installed through conda-forge as:
+
+.. code::
+
+    conda install -c conda-forge pydiso
+
+Mumps
+-----
+Mumps is available for all platforms. The mumps interface is enabled by installing the ``python-mumps``
+wrapper package. This can easily be installed through conda-forge with:
+
+.. code::
+
+    conda install -c conda-forge python-mumps
+
+
+
+Code:
+https://github.com/simpeg/pymatsolver
+
+
+Tests:
+https://github.com/simpeg/pymatsolver/actions
+
+
+Bugs & Issues:
+https://github.com/simpeg/pymatsolver/issues
+
+License: MIT
