@@ -622,7 +622,7 @@ const GEOM_TYPES = [
     detail:'Sedimantta Cu-Co, PGE reef, karbonatlarda Zn-Pb. Gravite+mag ayrımı zor.' },
 ];
 
-function GeometryPanel({ onGenerated, log }) {
+function GeometryPanel({ onGenerated, log, apiBase }) {
   const [geomType, setGeomType]=useState('beylikova_vein');
   const [nbc, setNbc]=useState(32);
   const [dip, setDip]=useState(60);
@@ -640,7 +640,7 @@ function GeometryPanel({ onGenerated, log }) {
     setLoading(true);
     try {
       // 1) Geometriyi backend'de üret
-      const r = await fetch(`${apiBase}/api/generate-geometry`, {
+      const r = await apiFetch(`${apiBase}/api/generate-geometry`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({geom_type:geomType, nbc, dip_deg:dip,
           depth_top_m:depthTop, depth_bot_m:depthBot, width_m:width,
@@ -650,7 +650,7 @@ function GeometryPanel({ onGenerated, log }) {
       setResult(d);
 
       // 2) Backend'den save-geometry endpoint'iyle .npy olarak kaydet
-      const saveR = await fetch(`${apiBase}/api/save-geometry`, {
+      const saveR = await apiFetch(`${apiBase}/api/save-geometry`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           model_data: d.model_data,
@@ -892,7 +892,14 @@ function ExportPanel({ modelData, colorRange, logs }) {
 }
 
 // ─── Ana uygulama ──────────────────────────────────────────────────────────────
-// ── Backend URL — runtime'da belirlenir, build'e bağımlı değil ───────────────
+// ── API fetch wrapper — ngrok warning sayfasını atlar ────────────────────────
+async function apiFetch(url, options = {}) {
+  const headers = {
+    'ngrok-skip-browser-warning': 'true',
+    ...(options.headers || {}),
+  };
+  return fetch(url, { ...options, headers });
+}
 // Electron: window.electronAPI.getConfig() → {colabUrl, backendMode}
 // Tarayıcı dev modu: localhost fallback
 const _isElectron = typeof window !== 'undefined' && !!window.electronAPI;
@@ -934,19 +941,20 @@ export default function App() {
     if (window.electronAPI) {
       window.electronAPI.getConfig().then(cfg => {
         if (cfg.colabUrl && cfg.backendMode === 'colab') {
-          setApiBase(cfg.colabUrl);
+          const cleanUrl = cfg.colabUrl.replace(/\/+$/, '');
+          setApiBase(cleanUrl);
           setBackendMode('colab');
-          setColabUrl(cfg.colabUrl);
-          API_BASE = cfg.colabUrl;
+          setColabUrl(cleanUrl);
         }
       }).catch(() => {});
     }
   }, []);
 
   const saveSettings = async () => {
-    const newBase = backendMode === 'colab' && colabUrl ? colabUrl : 'http://127.0.0.1:8000';
+    const cleanUrl = colabUrl.replace(/\/+$/, '');  // sondaki slash'ı sil
+    const newBase = backendMode === 'colab' && cleanUrl ? cleanUrl : 'http://127.0.0.1:8000';
     setApiBase(newBase);
-    API_BASE = newBase;
+    setColabUrl(cleanUrl);
     if (window.electronAPI) {
       await window.electronAPI.saveConfig({ colabUrl, backendMode });
       if (backendMode === 'local') await window.electronAPI.restartBackend();
@@ -1085,7 +1093,7 @@ export default function App() {
 
   // Backend
   useEffect(()=>{
-    fetch(`${apiBase}/api/health`).then(r=>r.json())
+    apiFetch(`${apiBase}/api/health`).then(r=>r.json())
       .then(d=>log('ok',`Backend v${d.version} bağlandı.`))
       .catch(()=>log('err','Backend bağlantısı kurulamadı.'));
     fetchDatasets();
@@ -1093,30 +1101,51 @@ export default function App() {
   }, [apiBase]);
 
   const fetchDatasets=async()=>{
-    try{const d=await(await fetch(`${apiBase}/api/data/list`)).json();setDatasets(d.files||[]);}
+    try{const d=await(await apiFetch(`${apiBase}/api/data/list`)).json();setDatasets(d.files||[]);}
     catch(e){log('err','Veri listesi alınamadı.');}
   };
   const fetchAnalyses=async()=>{
-    try{const d=await(await fetch(`${apiBase}/api/analyses`)).json();setSavedAnalyses(d.analyses||[]);}
+    try{const d=await(await apiFetch(`${apiBase}/api/analyses`)).json();setSavedAnalyses(d.analyses||[]);}
     catch{}
   };
 
-  const calcMetrics=data=>{
-    const vv=Math.pow(30,3);let vol=0,mass=0,sum=0;
-    data.flat(2).forEach(v=>{if(v>0.1){vol+=vv;mass+=v*2000*vv;sum+=v;}});
-    return{volume:vol,mass:mass/1000,heat:sum*0.05};
+  const calcMetrics = (data) => {
+    try {
+      const vv = Math.pow(30, 3);
+      let vol = 0, mass = 0, sum = 0;
+      const flat = data.flat ? data.flat(2) : [];
+      flat.forEach(v => {
+        if (v > 0.1) { vol += vv; mass += v * 2000 * vv; sum += v; }
+      });
+      return { volume: vol, mass: mass / 1000, heat: sum * 0.05 };
+    } catch(e) {
+      return { volume: 0, mass: 0, heat: 0 };
+    }
   };
-  const updateModel=data=>{
-    setModelData(data); setFilteredData(null);
-    const flat=data.flat(2);
-    setColorRange({min:Math.min(...flat),max:Math.max(...flat)});
-    setMetrics(calcMetrics(data));
+  const updateModel = (data) => {
+    if (!data || !data.length) return;
+    // Derin iç içe array'i düzleştir ve yeniden şekillendir
+    // Bu stack overflow'u önler
+    try {
+      setModelData(data);
+      setFilteredData(null);
+      // Flat array üzerinde çalış
+      const flat = Array.isArray(data[0][0])
+        ? data.flat(2)
+        : data.flat ? data.flat(Infinity) : [];
+      if (flat.length > 0) {
+        setColorRange({ min: Math.min(...flat), max: Math.max(...flat) });
+        setMetrics(calcMetrics(data));
+      }
+    } catch(e) {
+      console.error('updateModel hatası:', e);
+    }
   };
 
   const runAnalysis=async()=>{
     setLoading(true); log('info','Fizik motoru çağrılıyor...');
     try{
-      const d=await(await fetch(`${apiBase}/api/run-physics-engine`,{
+      const d=await(await apiFetch(`${apiBase}/api/run-physics-engine`,{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({grav_active:settings.grav,mag_active:settings.mag,
           csamt_active:settings.csamt,selected_index:settings.index,
@@ -1134,7 +1163,7 @@ export default function App() {
     if(![settings.grav,settings.mag,settings.csamt].some(Boolean)){log('err','En az bir katman aktif olmalı.');return;}
     setJiRunning(true); log('info',`Joint inversion (${jiIter} iter, grid ${jiGridSize}³)...`);
     try{
-      const d=await(await fetch(`${apiBase}/api/joint-inversion`,{
+      const d=await(await apiFetch(`${apiBase}/api/joint-inversion`,{
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({grav_active:settings.grav,mag_active:settings.mag,
           csamt_active:settings.csamt,selected_index:settings.index,
@@ -1161,7 +1190,7 @@ export default function App() {
   const [simpegAvailable, setSimpegAvailable]=useState(null);
 
   useEffect(()=>{
-    fetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
+    apiFetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
       .then(d=>setSimpegAvailable(d.available))
       .catch(()=>setSimpegAvailable(false));
   },[]);
@@ -1170,7 +1199,7 @@ export default function App() {
     setSimpegRunning(true);
     log('info',`SimPEG Tikhonov inversion başlatıldı (${simpegNbc}³, ${simpegIter} iter)...`);
     try {
-      const r = await fetch(`${apiBase}/api/simpeg/inversion`,{
+      const r = await apiFetch(`${apiBase}/api/simpeg/inversion`,{
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           grav_active: settings.grav, mag_active: settings.mag,
@@ -1197,7 +1226,7 @@ export default function App() {
     setUqRunning(true);
     log('info', `Belirsizlik analizi (${uqNReal} realizasyon, iter=${uqIter})...`);
     try {
-      const r = await fetch(`${apiBase}/api/uncertainty`, {
+      const r = await apiFetch(`${apiBase}/api/uncertainty`, {
         method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({
           grav_active: settings.grav, mag_active: settings.mag, csamt_active: settings.csamt,
@@ -1237,7 +1266,7 @@ export default function App() {
     if(!name) return;
     setSaving(true);
     try{
-      await fetch(`${apiBase}/api/analyses`,{method:'POST',
+      await apiFetch(`${apiBase}/api/analyses`,{method:'POST',
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({name,type:lastRun,dataset_used:selY,settings,results,metrics,
           model_data:modelData,history:jiHistory,correlation:jiCorr,summary:jiSummary})});
@@ -1248,7 +1277,7 @@ export default function App() {
 
   const loadAnalysis=async(id)=>{
     try{
-      const r=await(await fetch(`${apiBase}/api/analyses/${id}`)).json();
+      const r=await(await apiFetch(`${apiBase}/api/analyses/${id}`)).json();
       if(r.model_data){updateModel(r.model_data);}
       if(r.type==='joint'){setJiHistory(r.history||[]);setJiCorr(r.correlation||{});setJiSummary(r.summary||null);}
       if(r.settings)setSettings(r.settings);
@@ -1262,7 +1291,8 @@ export default function App() {
     setUploading(true); log('info',`Yükleniyor: ${file.name}`);
     try{
       const form=new FormData(); form.append('file',file);
-      const d=await(await fetch(`${apiBase}/api/data/upload`,{method:'POST',body:form})).json();
+      const d=await(await fetch(`${apiBase}/api/data/upload`,{method:'POST',body:form,
+        headers:{'ngrok-skip-browser-warning':'true'}})).json();
       log('ok',`Yüklendi: ${d.filename} (${(d.shape||[]).join('×')})`);
       await fetchDatasets();
       const fn=d.filename;
@@ -1274,7 +1304,7 @@ export default function App() {
   };
 
   const deleteDataset=async(fn)=>{
-    await fetch(`${apiBase}/api/data/${encodeURIComponent(fn)}`,{method:'DELETE'});
+    await apiFetch(`${apiBase}/api/data/${encodeURIComponent(fn)}`,{method:'DELETE'});
     if(selY===fn)setSelY(null); if(selGM===fn)setSelGM(null); if(selCS===fn)setSelCS(null);
     fetchDatasets(); log('ok',`Silindi: ${fn}`);
   };
@@ -1689,7 +1719,7 @@ export default function App() {
                         <div style={{fontSize:11,fontWeight:600,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{a.name}</div>
                         <div style={{fontSize:9,color:C.textLow}}><Tag color={a.type==='joint'?C.purple:C.teal}>{a.type}</Tag></div>
                       </button>
-                      <button onClick={async()=>{await fetch(`${apiBase}/api/analyses/${a.id}`,{method:'DELETE'});fetchAnalyses();}}
+                      <button onClick={async()=>{await apiFetch(`${apiBase}/api/analyses/${a.id}`,{method:'DELETE'});fetchAnalyses();}}
                         style={{background:'none',border:'none',cursor:'pointer',color:C.err,padding:2,flexShrink:0}}>
                         <Trash2 size={12}/>
                       </button>
@@ -2104,6 +2134,7 @@ export default function App() {
                     }
                   }}
                   log={log}
+                  apiBase={apiBase}
                 />
               </div>
             )}
