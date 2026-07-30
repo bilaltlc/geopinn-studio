@@ -15,24 +15,77 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 
+// ── useTheme hook: tema değişince tüm uygulamayı yeniden render et ────────────
+function useTheme() {
+  const [theme, setThemeState] = React.useState(_theme);
+  const toggle = React.useCallback((t) => {
+    const next = t || (_theme === 'dark' ? 'light' : 'dark');
+    applyTheme(next);
+    setThemeState(next);
+  }, []);
+  return [theme, toggle];
+}
+
 // ─── Renk paleti ─────────────────────────────────────────────────────────────
-const C = {
-  bg:       '#F0F2F5',
-  surface:  '#FFFFFF',
-  border:   '#DDE1E7',
-  header:   '#1B2A4A',
-  accent:   '#E87B2F',
-  accentL:  '#F59E5A',
-  teal:     '#0E7490',
-  tealL:    '#67C2D9',
-  text:     '#1A202C',
-  textMid:  '#4A5568',
-  textLow:  '#718096',
-  ok:       '#2D9B6F',
-  warn:     '#D97706',
-  err:      '#C53030',
-  purple:   '#6B46C1',
+// ── Tema sistemi ─────────────────────────────────────────────────────────────
+const THEMES = {
+  dark: {
+    bg:       '#0A0C0F',
+    surface:  '#141720',
+    panel:    '#1A1F2E',
+    border:   '#252B3B',
+    borderStr:'#323A50',
+    header:   '#E5E8EE',
+    accent:   '#E8A020',
+    accentL:  '#F2BC55',
+    teal:     '#2AABCC',
+    tealL:    '#5CC8E0',
+    text:     '#E5E8EE',
+    textMid:  '#8A94A8',
+    textLow:  '#4E566A',
+    ok:       '#27A865',
+    warn:     '#E8A020',
+    err:      '#E03A3A',
+    purple:   '#8B5CF6',
+  },
+  light: {
+    bg:       '#F2F4F7',
+    surface:  '#FFFFFF',
+    panel:    '#EAECF0',
+    border:   '#CDD2DC',
+    borderStr:'#A8B0C0',
+    header:   '#0D1117',
+    accent:   '#C47A10',
+    accentL:  '#E09030',
+    teal:     '#1A7A96',
+    tealL:    '#3A9AB8',
+    text:     '#0D1117',
+    textMid:  '#3A4252',
+    textLow:  '#6B7488',
+    ok:       '#1A8A52',
+    warn:     '#B86A00',
+    err:      '#B82020',
+    purple:   '#6B3FBE',
+  },
 };
+
+// Global tema state — modülün en üstünde tutuluyor, React state değil
+// çünkü C objesi bileşen dışında da kullanılıyor
+let _theme = 'dark';
+let C = { ...THEMES.dark };
+
+function applyTheme(t) {
+  _theme = t;
+  Object.assign(C, THEMES[t]);
+  // localStorage'a kaydet
+  try { localStorage.setItem('geopinn_theme', t); } catch(e){}
+}
+
+// Başlangıçta kayıtlı temayı yükle
+try {
+  const saved = localStorage.getItem('geopinn_theme');
+  if (saved === 'light' || saved === 'dark') applyTheme(saved);
+} catch(e){}
 
 // ─── Colormap (Viridis benzeri, jeoloji için) ─────────────────────────────────
 function scalarToColor(t) {
@@ -906,6 +959,7 @@ const _isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 let API_BASE = 'http://127.0.0.1:8000';   // varsayılan, useEffect'te güncellenir
 
 export default function App() {
+  const [theme, toggleTheme] = useTheme();
   // Veri
   const [modelData, setModelData]=useState(null);
   const [filteredData, setFilteredData]=useState(null);
@@ -915,6 +969,21 @@ export default function App() {
 
   // Görünüm
   const [viewMode, setViewMode]=useState('3d'); // '3d' | 'slice' | 'anomaly' | 'stats'
+  const [engineMode, setEngineMode]=useState('prism'); // 'prism' | 'fvm'
+  const [fvmResult, setFvmResult]=useState(null);
+  const [fvmRunning, setFvmRunning]=useState(false);
+  const [fvmAvailable, setFvmAvailable]=useState(null);
+  // Radyometri & ısı akışı
+  const [radResult, setRadResult]=useState(null);
+  const [radRunning, setRadRunning]=useState(false);
+  const [radAvailable, setRadAvailable]=useState(false);
+  const [radParams, setRadParams]=useState({
+    u_bg:3.0, u_ore:15.0, th_bg:12.0, th_ore:60.0,
+    k_bg:2.5, k_ore:4.5, k_thermal:2.5,
+  });
+  // Veri formatı seçici
+  const [dataFormats, setDataFormats]=useState({});
+  const [selectedFormat, setSelectedFormat]=useState('auto');
   const [viewBg, setViewBg]=useState('light');
   const [isoThreshold, setIsoThreshold]=useState(0.08);
   const [opacity3d, setOpacity3d]=useState(1.0);
@@ -970,21 +1039,6 @@ export default function App() {
   const [helpTopic,  setHelpTopic]  = useState('workflow');
 
   const HELP = {
-    workflow: {
-      title: '📋 Önerilen İş Akışı',
-      items: [
-        { label:'① Geometri Oluştur',  color:C.teal,
-          desc:'Sağ panel → Geometri sekmesi → tip seç → parametreleri ayarla → Oluştur\nBeylikova için: Damar, dip=60°, üst=30m, alt=380m, genişlik=60m' },
-        { label:'② Forward Modelling', color:C.accent,
-          desc:'Sol panel → Veri sekmesi → Gravite + Manyetik aktif → Analizi Başlat\nSonuç: Harita sekmesinde anomali haritasını gör' },
-        { label:'③ Ters Çözüm',        color:C.purple,
-          desc:'Hızlı: Sol → Ters Çözüm sekmesi (Grav+Mag+CSAMT birlikte)\nGüvenilir: Sağ → SimPEG sekmesi (adjoint, sadece Grav veya Mag)' },
-        { label:'④ Belirsizlik',        color:C.ok,
-          desc:'Sağ → Belirsizlik sekmesi → 5 realizasyon → Başlat\nCV<0.3 mavi=güvenilir · CV>0.7 sarı=belirsiz' },
-        { label:'⑤ Dışa Aktar',        color:C.textMid,
-          desc:'Sağ → Dışa Aktar → PNG (anomali haritası) + CSV (3D nokta bulutu)' },
-      ]
-    },
     values: {
       title: '🎨 Model Değerleri [0–1]',
       items: [
@@ -1026,6 +1080,49 @@ export default function App() {
           desc:'SEDEX (Zn-Pb-Ag), VMS (Cu-Zn), tabaka uyumlu\nYatay, geniş, sığ. CSAMT derinlik kontrolü kritik' },
         { label:'Stratabound',    color:'#7C3AED',
           desc:'Sedimantta Cu-Co, PGE, karbonatlarda Zn-Pb\nYatay katman, kenar yoğun. Gravite+mag ayrımı zor' },
+      ]
+    },
+    radiometry: {
+      title: '☢️ Radyometri & Isı Akışı',
+      items: [
+        { label:'Th/U > 4', color:'#D97706',
+          desc:'Gelişmiş alterasyon — REE mobilizasyonu başlamış\nMonazit/xenotim Th ve U\'u konsantre eder\nBeylikova\'da tipik: Th/U = 4–8' },
+        { label:'eU (efektif U)', color:'#B45309',
+          desc:'eU = U_ppm + 0.335 × Th_ppm\n>8 ppm → yüksek radyojenik kaynak, güçlü anomali\nMonazit, uraninit, coffinit indikatörü' },
+        { label:'Isı Akışı > 90 mW/m²', color:'#C53030',
+          desc:'Aktif hidrotermal sistem veya radyojenik zengin granit\nBeylikova analogu: 80–120 mW/m² beklenir\nSP anomalisiyle örtüşmeli' },
+        { label:'Bileşik Skor > 0.6', color:'#2D7D52',
+          desc:'Th/U + eU + K anomalilerinin ağırlıklı ortalaması\n>0.6 → sondaj öncelikli hedef\n>0.8 → en yüksek öncelik' },
+      ]
+    },
+    fvm: {
+      title: '⚡ FVM vs Analitik Motor',
+      items: [
+        { label:'Analitik (Prizma)', color:C.teal,
+          desc:'Nagy (gravite) / Bhattacharyya (manyetik) kapalı form\nSonsuz homojen uzay varsayımı · GPU hızlandırmalı\nHızlı, standart araştırma için yeterli' },
+        { label:'FVM (Poisson)', color:C.accent,
+          desc:'∇²U = kaynak denklemi, Dirichlet BC\nSınırlı domain, gerçekçi sınır koşulları\nYavaş ama domain sınırına yakın cevherlerde daha doğru' },
+        { label:'Göreli RMSE < %5', color:C.ok,
+          desc:'Motorlar uyumlu → analitik sonuç güvenilir\nFVM kullanmaya gerek yok' },
+        { label:'Göreli RMSE > %5', color:C.err,
+          desc:'Sınır etkisi var → FVM modunu kullan\nDomain kenarına yakın cevher gövdesi veya çok derin hedef' },
+      ]
+    },
+    workflow: {
+      title: '📋 Beylikova REE Arama Akışı',
+      items: [
+        { label:'① Geometri Oluştur',  color:C.teal,
+          desc:'Sağ panel → Geometri → "Hidrotermal Damar" seç\ndip=60°, üst=30m, alt=380m, genişlik=60m → Oluştur' },
+        { label:'② Forward Modelleme', color:C.accent,
+          desc:'Sol panel → Gravite + Manyetik aktif → Analizi Başlat\nHarita sekmesinde anomali dağılımını gör' },
+        { label:'③ Radyometri',        color:'#D97706',
+          desc:'Sağ panel → Radyometri → parametreleri ayarla → Hesapla\nTh/U haritası + ısı akışı → REE hedef skoru' },
+        { label:'④ Joint Inversion',   color:C.purple,
+          desc:'Sol → Ters Çözüm → Grav+Mag+CSAMT → 32³ grid → 60 iter\nMisfit yakınsama grafiğini izle' },
+        { label:'⑤ Belirsizlik',       color:C.ok,
+          desc:'Sağ → Belirsizlik → 8 realizasyon → %5 gürültü\nCV<0.3 = güvenilir hedef bölgesi' },
+        { label:'⑥ Dışa Aktar',       color:C.textMid,
+          desc:'Sağ → Dışa Aktar → CSV (koordinatlar) + PNG (haritalar)\nSondaj lokasyon önerileri için kullan' },
       ]
     },
   };
@@ -1149,7 +1246,8 @@ export default function App() {
         method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({grav_active:settings.grav,mag_active:settings.mag,
           csamt_active:settings.csamt,selected_index:settings.index,
-          dataset:selY,dataset_gravmag:selGM,dataset_csamt:selCS}),
+          dataset:selY,dataset_gravmag:selGM,dataset_csamt:selCS,
+          engine_mode:engineMode}),
       })).json();
       updateModel(d.model_data);
       setResults(d.results||{});
@@ -1157,6 +1255,56 @@ export default function App() {
       log('ok',`Analiz tamamlandı — ${d.dataset_used}`);
     } catch(e){log('err',`Analiz hatası: ${e.message}`);}
     finally{setLoading(false);}
+  };
+
+  // FVM + Radyometri status kontrolü
+  useEffect(()=>{
+    apiFetch(`${apiBase}/api/radiometry/status`).then(r=>r.json())
+      .then(d=>setRadAvailable(d.available||false)).catch(()=>{});
+    apiFetch(`${apiBase}/api/data/formats`).then(r=>r.json())
+      .then(d=>setDataFormats(d.formats||{})).catch(()=>{});
+  },[apiBase]);
+
+  const runRadiometry=async()=>{
+    setRadRunning(true); log('info','Radyometri & ısı akışı hesaplanıyor...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/radiometry/forward`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dataset:selY, selected_index:settings.index,
+          u_background_ppm:radParams.u_bg,  u_ore_ppm:radParams.u_ore,
+          th_background_ppm:radParams.th_bg, th_ore_ppm:radParams.th_ore,
+          k_background_pct:radParams.k_bg,   k_ore_pct:radParams.k_ore,
+          k_thermal:radParams.k_thermal,
+          compute_heat_flow:true, compute_radiometry:true, compute_ree_index:true,
+        }),
+      })).json();
+      setRadResult(d);
+      setRightTab('radio');
+      log('ok',`Radyometri tamamlandı — REE olasılık maks: ${d.ree_index?.stats?.max_prob?.toFixed(3)||'—'}`);
+    }catch(e){log('err',`Radyometri hatası: ${e.message}`);}
+    finally{setRadRunning(false);}
+  };
+
+  // FVM status kontrolü
+  useEffect(()=>{
+    apiFetch(`${apiBase}/api/fvm/status`).then(r=>r.json())
+      .then(d=>setFvmAvailable(d.available||false)).catch(()=>setFvmAvailable(null));
+  },[apiBase]);
+
+  const runFvmCompare=async()=>{
+    setFvmRunning(true); log('info','FVM vs Prizma karşılaştırması başlatıldı...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/fvm/compare`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({dataset:selY,selected_index:settings.index,
+          grav_active:settings.grav,mag_active:settings.mag}),
+      })).json();
+      setFvmResult(d);
+      setRightTab('fvm');
+      log('ok',`FVM karşılaştırma tamamlandı — Gravite RMSE: ${d.result?.gravity?.rmse_mgal?.toFixed(4)||'—'} mGal`);
+    }catch(e){log('err',`FVM hatası: ${e.message}`);}
+    finally{setFvmRunning(false);}
   };
 
   const runJI=async()=>{
@@ -1192,8 +1340,8 @@ export default function App() {
   useEffect(()=>{
     apiFetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
       .then(d=>setSimpegAvailable(d.available))
-      .catch(()=>setSimpegAvailable(false));
-  },[]);
+      .catch(()=>setSimpegAvailable(null));  // null = bilinmiyor (false = kesin yok)
+  },[apiBase]);
 
   const runSimPEG = async () => {
     setSimpegRunning(true);
@@ -1334,6 +1482,8 @@ export default function App() {
     {id:'stats',  label:'Analiz',     icon:Activity},
     {id:'uq',     label:'Belirsizlik',icon:AlertCircle},
     {id:'simpeg', label:'SimPEG',     icon:GitCompare},
+    {id:'fvm',    label:'FVM',        icon:Layers},
+    {id:'radio',  label:'Radyometri', icon:Waves},
     {id:'geom',   label:'Geometri',   icon:Mountain},
     {id:'filter', label:'Filtre',     icon:Filter},
     {id:'export', label:'Dışa Aktar', icon:Download},
@@ -1342,37 +1492,50 @@ export default function App() {
   // ─── Render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ display:'flex', flexDirection:'column', height:'100vh',
-                  background: C.bg, color: C.text, fontFamily:'system-ui,sans-serif',
-                  overflow:'hidden', fontSize:13 }}>
+                  background: C.bg, color: C.text,
+                  fontFamily:'"Inter","Segoe UI",system-ui,sans-serif',
+                  overflow:'hidden', fontSize:13,
+                  transition:'background 0.2s, color 0.2s' }}>
 
       {/* ── Üst şerit ── */}
-      <header style={{ height:44, background: C.header, borderBottom:`2px solid ${C.accent}`,
-                       display:'flex', alignItems:'center', padding:'0 16px', gap:16,
-                       flexShrink:0, boxShadow:'0 2px 8px rgba(0,0,0,0.2)' }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-          <div style={{ width:28, height:28, borderRadius:6, background: C.accent,
-                        display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <Mountain size={16} color="#fff" />
+      <header style={{ height:42, background: theme==='dark' ? '#0D1018' : '#0D1117',
+                       borderBottom:`1.5px solid ${C.accent}`,
+                       display:'flex', alignItems:'center', padding:'0 14px', gap:12,
+                       flexShrink:0, userSelect:'none' }}>
+        {/* Logo */}
+        <div style={{ display:'flex', alignItems:'center', gap:0, flexShrink:0 }}>
+          {/* İmza element: sismik profil || çizgileri */}
+          <div style={{ display:'flex', alignItems:'center', gap:2, marginRight:10 }}>
+            {[6,10,14,10,6].map((h,i)=>(
+              <div key={i} style={{ width:2, height:h, background:C.accent,
+                borderRadius:1, opacity: i===2?1:0.5+i*0.05 }}/>
+            ))}
           </div>
           <div>
-            <div style={{ fontSize:14, fontWeight:800, color:'#fff', letterSpacing:'0.02em' }}>GeoPINN</div>
-            <div style={{ fontSize:9, color: C.accentL, letterSpacing:'0.1em', textTransform:'uppercase', marginTop:-2 }}>
-              Studio 3.0 — Applied Geophysics
-            </div>
+            <span style={{ fontSize:13, fontWeight:800, color:'#fff',
+              letterSpacing:'0.06em', fontFamily:'"Inter","Segoe UI",sans-serif' }}>GEO</span>
+            <span style={{ fontSize:13, fontWeight:800, color:C.accent,
+              letterSpacing:'0.06em' }}>PINN</span>
+            <span style={{ fontSize:8, color:'rgba(255,255,255,0.35)',
+              letterSpacing:'0.15em', textTransform:'uppercase',
+              marginLeft:8, fontWeight:400 }}>STUDIO 3.0</span>
           </div>
         </div>
 
+        {/* Dikey ayraç */}
+        <div style={{ width:1, height:24, background:'rgba(255,255,255,0.12)', flexShrink:0 }}/>
+
         {/* Görünüm sekmeleri */}
-        <div style={{ display:'flex', gap:2, background:'rgba(255,255,255,0.1)',
-                      borderRadius:6, padding:3, marginLeft:8 }}>
+        <div style={{ display:'flex', gap:1 }}>
           {viewTabs.map(({id,label,icon:Icon})=>(
             <button key={id} onClick={()=>setViewMode(id)}
-              style={{ display:'flex', alignItems:'center', gap:5, padding:'4px 12px',
-                       borderRadius:4, border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
-                       background: viewMode===id ? '#fff' : 'transparent',
-                       color: viewMode===id ? C.header : 'rgba(255,255,255,0.7)',
-                       transition:'all 0.15s' }}>
-              <Icon size={12}/>{label}
+              style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 11px',
+                       border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
+                       background: viewMode===id ? C.accent : 'transparent',
+                       color: viewMode===id ? '#fff' : 'rgba(255,255,255,0.45)',
+                       borderBottom: viewMode===id ? `2px solid ${C.accentL}` : '2px solid transparent',
+                       transition:'all 0.12s', letterSpacing:'0.02em' }}>
+              <Icon size={11}/>{label}
             </button>
           ))}
         </div>
@@ -1398,17 +1561,28 @@ export default function App() {
                            background: backendMode==='colab' ? '#34D399' : 'rgba(255,255,255,0.3)' }}/>
             {backendMode==='colab' ? 'Colab GPU' : 'Yerel'}
           </span>
+          {/* Tema toggle */}
+          <button onClick={()=>toggleTheme()}
+            title={theme==='dark'?'Aydınlık moda geç':'Karanlık moda geç'}
+            style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)',
+                     borderRadius:3, width:28, height:26, cursor:'pointer',
+                     color:'rgba(255,255,255,0.7)', fontSize:13,
+                     display:'flex', alignItems:'center', justifyContent:'center' }}>
+            {theme==='dark' ? '☀' : '◑'}
+          </button>
           <button onClick={()=>setShowSettings(true)}
-            style={{ background:'rgba(255,255,255,0.12)', border:'1px solid rgba(255,255,255,0.2)',
-                     borderRadius:5, padding:'3px 10px', cursor:'pointer', color:'rgba(255,255,255,0.8)',
-                     fontSize:11, display:'flex', alignItems:'center', gap:4 }}>
-            <Settings size={12}/> Bağlantı
+            style={{ background:'rgba(255,255,255,0.08)', border:'1px solid rgba(255,255,255,0.15)',
+                     borderRadius:3, padding:'3px 9px', cursor:'pointer', color:'rgba(255,255,255,0.7)',
+                     fontSize:10, fontWeight:600, letterSpacing:'0.04em',
+                     display:'flex', alignItems:'center', gap:4 }}>
+            <Settings size={11}/> BAĞLANTI
           </button>
           <button onClick={()=>setShowHelp(true)}
-            style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:5,
-                     padding:'3px 10px', cursor:'pointer', color:'#fff', fontSize:11,
-                     fontWeight:600, display:'flex', alignItems:'center', gap:4 }}>
-            <Info size={12}/> Rehber
+            style={{ background:C.accent, border:'none', borderRadius:3,
+                     padding:'3px 9px', cursor:'pointer', color:'#fff', fontSize:10,
+                     fontWeight:700, letterSpacing:'0.04em',
+                     display:'flex', alignItems:'center', gap:4 }}>
+            <Info size={11}/> REHBER
           </button>
         </div>
       </header>
@@ -1507,7 +1681,8 @@ export default function App() {
             {/* Konu sekmeleri */}
             <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, background:C.bg }}>
               {[{id:'workflow',label:'İş Akışı'},{id:'values',label:'Değerler'},
-                {id:'geom',label:'Geometri'},{id:'simpeg',label:'SimPEG'}].map(({id,label})=>(
+                {id:'geom',label:'Geometri'},{id:'simpeg',label:'SimPEG'},
+                {id:'radiometry',label:'Radyometri'},{id:'fvm',label:'FVM'}].map(({id,label})=>(
                 <button key={id} onClick={()=>setHelpTopic(id)}
                   style={{ flex:1, padding:'9px 4px', border:'none', cursor:'pointer',
                            fontSize:11, fontWeight:700,
@@ -1656,9 +1831,33 @@ export default function App() {
           {leftTab==='data' && (
             <>
               <div style={{padding:12,borderBottom:`1px solid ${C.border}`}}>
+                {/* Veri formatı seçici */}
+                {Object.keys(dataFormats).length>0&&(
+                  <div style={{marginBottom:8}}>
+                    <div style={{fontSize:10,color:C.textMid,marginBottom:4,textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                      Veri formatı
+                    </div>
+                    <select value={selectedFormat}
+                      onChange={e=>setSelectedFormat(e.target.value)}
+                      style={{width:'100%',padding:'4px 6px',borderRadius:4,fontSize:11,
+                        border:`1px solid ${C.border}`,background:C.bg,color:C.text,marginBottom:6}}>
+                      <option value="auto">Otomatik tespit</option>
+                      {Object.entries(dataFormats).map(([key,fmt])=>(
+                        <option key={key} value={key}>{fmt.description||key}</option>
+                      ))}
+                    </select>
+                    {selectedFormat!=='auto'&&dataFormats[selectedFormat]&&(
+                      <div style={{fontSize:10,color:C.textMid,lineHeight:1.4,
+                        padding:'4px 6px',background:C.bg,borderRadius:4,
+                        border:`1px solid ${C.border}`}}>
+                        Beklenen: {dataFormats[selectedFormat].columns?.join(', ')}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <Btn onClick={()=>fileRef.current?.click()} icon={Upload} variant="secondary" size="sm"
                   style={{width:'100%'}} disabled={uploading}>
-                  {uploading?'Yükleniyor...':'Veri Yükle (.npy)'}
+                  {uploading?'Yükleniyor...':'Veri Yükle (.npy / .csv / .dat)'}
                 </Btn>
                 <input ref={fileRef} type="file" accept=".npy" style={{display:'none'}}
                   onChange={e=>{uploadFile(e.target.files?.[0]);e.target.value='';}}/>
@@ -1886,25 +2085,49 @@ export default function App() {
           )}
         </main>
 
-        {/* ── Sağ panel ── */}
-        <aside style={{ width:280, background: C.surface, borderLeft:`1px solid ${C.border}`,
-                        display:'flex', flexDirection:'column', flexShrink:0 }}>
+        {/* ── Sağ Panel: dikey ikon rail + içerik ── */}
+        <aside style={{ display:'flex', borderLeft:`1.5px solid ${C.border}`, flexShrink:0 }}>
 
-          {/* Sağ panel sekme çubuğu */}
-          <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
+          {/* Dikey ikon rail */}
+          <div style={{ width:46, background: theme==='dark'?'#0A0C10':'#0D1117',
+            borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column',
+            alignItems:'center', paddingTop:8, gap:1, flexShrink:0 }}>
             {rightTabs.map(({id,label,icon:Icon})=>(
               <button key={id} onClick={()=>setRightTab(id)}
-                style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center',
-                         gap:2, padding:'8px 4px', border:'none', cursor:'pointer',
-                         fontSize:9, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.05em',
-                         background: rightTab===id ? `${C.accent}12` : 'transparent',
-                         color: rightTab===id ? C.accent : C.textMid,
-                         borderBottom: rightTab===id ? `2px solid ${C.accent}` : '2px solid transparent',
-                         transition:'all 0.15s' }}>
+                title={label}
+                style={{ width:40, height:40, display:'flex', flexDirection:'column',
+                  alignItems:'center', justifyContent:'center', gap:2,
+                  border:'none', cursor:'pointer', borderRadius:3,
+                  background: rightTab===id ? `${C.accent}20` : 'transparent',
+                  color: rightTab===id ? C.accent : 'rgba(255,255,255,0.28)',
+                  transition:'all 0.12s',
+                  borderRight: rightTab===id ? `2px solid ${C.accent}` : '2px solid transparent' }}>
                 <Icon size={14}/>
-                {label}
+                <span style={{ fontSize:7, fontWeight:700, letterSpacing:'0.03em',
+                  textTransform:'uppercase', lineHeight:1,
+                  color: rightTab===id ? C.accent : 'rgba(255,255,255,0.22)' }}>
+                  {label.length>5 ? label.slice(0,5) : label}
+                </span>
               </button>
             ))}
+          </div>
+
+          {/* İçerik alanı */}
+          <div style={{ width:256, background: C.panel,
+                        display:'flex', flexDirection:'column', flexShrink:0 }}>
+
+          {/* Sekme başlığı */}
+          <div style={{ height:36, borderBottom:`1px solid ${C.border}`,
+            display:'flex', alignItems:'center', padding:'0 12px',
+            flexShrink:0, gap:6 }}>
+            {(() => { const t=rightTabs.find(x=>x.id===rightTab); const I=t?.icon;
+              return (<>
+                {I && <I size={13} color={C.accent}/>}
+                <span style={{ fontSize:11, fontWeight:700, color:C.text,
+                  letterSpacing:'0.04em', textTransform:'uppercase' }}>
+                  {t?.label}
+                </span>
+              </>); })()}
           </div>
 
           <div style={{flex:1,overflowY:'auto',minHeight:0}}>
@@ -1913,8 +2136,9 @@ export default function App() {
                 <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',
                              letterSpacing:'0.06em',marginBottom:4,display:'flex',alignItems:'center',gap:6}}>
                   SimPEG Tikhonov Inversion
-                  {simpegAvailable===true && <Tag color={C.ok}>Kurulu</Tag>}
-                  {simpegAvailable===false && <Tag color={C.err}>Kurulu Değil</Tag>}
+                  {simpegAvailable===true  && <Tag color={C.ok}>✓ Kurulu</Tag>}
+                  {simpegAvailable===false && <Tag color={C.err}>✗ Kurulu Değil</Tag>}
+                  {simpegAvailable===null  && <Tag color={C.textLow}>— Kontrol ediliyor</Tag>}
                 </div>
 
                 <div style={{fontSize:10,color:C.textMid,marginBottom:12,lineHeight:1.6,
@@ -1924,7 +2148,7 @@ export default function App() {
                   iterasyonu + otomatik beta ayarı. Daha yavaş ama teorik olarak daha doğru.
                 </div>
 
-                {simpegAvailable===false && (
+                {simpegAvailable===false && apiBase!=='http://127.0.0.1:8000' && (
                   <div style={{background:`${C.err}10`,border:`1px solid ${C.err}30`,
                                borderRadius:5,padding:'8px 10px',marginBottom:12,fontSize:11,color:C.err}}>
                     SimPEG kurulu değil. Backend'de çalıştırın:<br/>
@@ -2121,6 +2345,237 @@ export default function App() {
                 </>)}
               </div>
             )}
+            {rightTab==='radio' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,
+                  borderBottom:`1px solid ${C.border}`,paddingBottom:6}}>
+                  Radyometri & Isı Akışı (U/Th/K)
+                </div>
+                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                  Cevher modelinden U/Th/K konsantrasyonu hesaplar →
+                  gammaray sayımı, Th/U alterasyon indeksi, radyojenik ısı akışı.
+                </div>
+
+                {/* Petrofizik parametreler */}
+                <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                  <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:8}}>
+                    Petrofizik (Beylikova analogu)
+                  </div>
+                  {[
+                    ['U (arka plan)', 'u_bg',  'ppm', 0.5, 10,  0.5],
+                    ['U (cevher)',    'u_ore', 'ppm', 5,   50,  1],
+                    ['Th (arka plan)','th_bg', 'ppm', 2,   30,  1],
+                    ['Th (cevher)',   'th_ore','ppm', 20,  150, 5],
+                    ['K (arka plan)', 'k_bg',  '%',   0.5, 4,   0.1],
+                    ['K (cevher)',    'k_ore', '%',   2,   8,   0.1],
+                    ['k ısıl iletkenlik','k_thermal','W/mK',1,4,0.1],
+                  ].map(([label,key,unit,min,max,step])=>(
+                    <div key={key} style={{display:'flex',alignItems:'center',
+                      justifyContent:'space-between',marginBottom:5,gap:8}}>
+                      <span style={{fontSize:10,color:C.textMid,flex:'0 0 130px'}}>{label}</span>
+                      <input type="range" min={min} max={max} step={step}
+                        value={radParams[key]}
+                        onChange={e=>setRadParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
+                        style={{flex:1,accentColor:C.teal}}/>
+                      <span style={{fontSize:10,fontFamily:'monospace',
+                        color:C.teal,minWidth:55,textAlign:'right'}}>
+                        {radParams[key].toFixed(1)} {unit}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                <Btn onClick={runRadiometry} icon={radRunning?Loader2:Waves}
+                  variant='teal' size='sm' style={{width:'100%'}}
+                  disabled={radRunning||!radAvailable}>
+                  {radRunning?'Hesaplanıyor...':!radAvailable?'Modül yok':'Radyometri Hesapla'}
+                </Btn>
+
+                {!radAvailable&&(
+                  <div style={{fontSize:10,color:C.textMid,background:C.panel,
+                    borderRadius:4,padding:'8px 10px',border:`1px solid ${C.border}`,lineHeight:1.6}}>
+                    <div style={{fontWeight:700,color:C.warn,marginBottom:4}}>
+                      Radyometri modülü aktif değil
+                    </div>
+                    Colab'daki <code style={{fontFamily:'monospace',fontSize:9}}>engines/</code> klasörüne
+                    eklemek için:
+                    <div style={{marginTop:6,fontFamily:'monospace',fontSize:9,
+                      background:C.bg,padding:'5px 8px',borderRadius:3,color:C.teal}}>
+                      cp radiometry.py engines/<br/>
+                      cp heat_flow_fvm.py engines/
+                    </div>
+                    <div style={{marginTop:4,color:C.textLow,fontSize:9}}>
+                      Sonra Server Başlat hücresini yeniden çalıştır.
+                    </div>
+                  </div>
+                )}
+
+                {radResult&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    {/* REE Hedef İndeksi */}
+                    {radResult.ree_index&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+                          REE Hedef İndeksi
+                        </div>
+                        {[
+                          ['Maks. olasılık', (radResult.ree_index.stats.max_prob*100).toFixed(1)+'%'],
+                          ['Yüksek olasılıklı hücre', radResult.ree_index.stats.high_prob_cells+' voksel'],
+                          ['Ort. Th/U', radResult.ree_index.stats.Th_U_mean?.toFixed(2)],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',
+                            fontSize:11,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',
+                              color:radResult.ree_index.stats.max_prob>0.6?'#22c55e':C.teal}}>{v}</span>
+                          </div>
+                        ))}
+                        <div style={{fontSize:10,color:C.textMid,marginTop:6,
+                          padding:'4px 8px',borderRadius:4,
+                          background:radResult.ree_index.stats.max_prob>0.6?'#22c55e18':'#f9731618',
+                          border:`1px solid ${radResult.ree_index.stats.max_prob>0.6?'#22c55e40':'#f9731640'}`}}>
+                          {radResult.ree_index.stats.interpretation}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Radyometri */}
+                    {radResult.radiometry&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+                          Gammaray (yüzey)
+                        </div>
+                        {[
+                          ['TC maks',  radResult.radiometry.stats.TC_max?.toFixed(1)+' cps'],
+                          ['TC ort',   radResult.radiometry.stats.TC_mean?.toFixed(1)+' cps'],
+                          ['Th/U maks',radResult.radiometry.stats.Th_U_max?.toFixed(2)],
+                          ['Doz maks', radResult.radiometry.stats.dose_max?.toFixed(1)+' nGy/h'],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',
+                            fontSize:11,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Isı Akışı */}
+                    {radResult.heat_flow&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+                          Radyojenik Isı Akışı
+                        </div>
+                        {[
+                          ['Ort. ısı akışı', radResult.heat_flow.stats.heat_flux_mean_mw_m2?.toFixed(1)+' mW/m²'],
+                          ['Maks. ısı akışı', radResult.heat_flow.stats.heat_flux_max_mw_m2?.toFixed(1)+' mW/m²'],
+                          ['Ort. Q',  radResult.heat_flow.stats.Q_mean_uw_m3?.toFixed(2)+' μW/m³'],
+                          ['Maks. Q', radResult.heat_flow.stats.Q_max_uw_m3?.toFixed(2)+' μW/m³'],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',
+                            fontSize:11,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                          </div>
+                        ))}
+                        <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
+                          {radResult.heat_flow.stats.interpretation}
+                        </div>
+                      </div>
+                    )}
+
+                    <div style={{fontSize:10,color:C.textMid}}>
+                      Dataset: {radResult.dataset_used} · Grid: {radResult.grid_size}³
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            {rightTab==='fvm' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
+                <div style={{fontSize:12,fontWeight:700,color:C.text,borderBottom:`1px solid ${C.border}`,paddingBottom:6,marginBottom:2}}>
+                  FVM vs Prizma Karşılaştırması
+                </div>
+                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                  Analitik prizma motoru (Nagy/Bhattacharyya) ile Sonlu Hacimler Poisson
+                  çözücüsünü aynı model üzerinde karşılaştırır. RMSE ve görsel fark haritası.
+                </div>
+                <Btn onClick={runFvmCompare} icon={fvmRunning?Loader2:GitCompare}
+                  variant='teal' size='sm' style={{width:'100%'}} disabled={fvmRunning||fvmAvailable===false}>
+                  {fvmRunning?'Hesaplanıyor...':!fvmAvailable?'FVM modülü yok':'Karşılaştırmayı Başlat'}
+                </Btn>
+                {fvmAvailable===false && apiBase!=='http://127.0.0.1:8000' && (
+                  <div style={{fontSize:10,color:C.textMid,background:C.bg,
+                    borderRadius:3,padding:'8px 10px',border:`1px solid ${C.border}`,lineHeight:1.6}}>
+                    <div style={{fontWeight:700,color:C.warn,marginBottom:4}}>FVM modülü aktif değil</div>
+                    <code style={{fontSize:9,color:C.teal}}>engines/gravity_fvm.py</code> ve{' '}
+                    <code style={{fontSize:9,color:C.teal}}>magnetic_fvm.py</code> Colab'daki
+                    engines/ klasöründe mevcut — server'ı yeniden başlatın.
+                  </div>
+                )}
+                {fvmResult&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{fontSize:11,color:C.textMid,fontFamily:'monospace'}}>
+                      Dataset: {fvmResult.dataset_used} · Grid: {fvmResult.grid_size}³
+                    </div>
+                    {fvmResult.result?.gravity&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+                          Gravite (mGal)
+                        </div>
+                        {[
+                          ['RMSE', fvmResult.result.gravity.rmse_mgal?.toFixed(4)+' mGal'],
+                          ['Maks. sapma', fvmResult.result.gravity.max_diff_mgal?.toFixed(4)+' mGal'],
+                          ['Göreli RMSE', fvmResult.result.gravity.rel_rmse_pct?.toFixed(2)+'%'],
+                          ['Prizma süresi', fvmResult.result.gravity.time_prism_s?.toFixed(3)+'s'],
+                          ['FVM süresi', fvmResult.result.gravity.time_fvm_s?.toFixed(3)+'s'],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',
+                            fontSize:11,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                          </div>
+                        ))}
+                        <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
+                          {fvmResult.result.gravity.rel_rmse_pct < 5
+                            ? '✓ Motorlar %5 içinde uyumlu'
+                            : '⚠ %5 üzerinde sapma — sınır etkisi veya grid çözünürlüğü'}
+                        </div>
+                      </div>
+                    )}
+                    {fvmResult.result?.magnetic&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
+                        <div style={{fontSize:11,fontWeight:700,color:C.text,marginBottom:6}}>
+                          Manyetik TMI (nT)
+                        </div>
+                        {[
+                          ['RMSE', fvmResult.result.magnetic.rmse_nt?.toFixed(4)+' nT'],
+                          ['Maks. sapma', fvmResult.result.magnetic.max_diff_nt?.toFixed(4)+' nT'],
+                          ['Göreli RMSE', fvmResult.result.magnetic.rel_rmse_pct?.toFixed(2)+'%'],
+                          ['Prizma süresi', fvmResult.result.magnetic.time_prism_s?.toFixed(3)+'s'],
+                          ['FVM süresi', fvmResult.result.magnetic.time_fvm_s?.toFixed(3)+'s'],
+                        ].map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',
+                            fontSize:11,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                          </div>
+                        ))}
+                        <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
+                          {fvmResult.result.magnetic.rel_rmse_pct < 5
+                            ? '✓ Motorlar %5 içinde uyumlu'
+                            : '⚠ %5 üzerinde sapma'}
+                        </div>
+                      </div>
+                    )}
+                    <div style={{fontSize:10,color:C.textMid,lineHeight:1.5,
+                      borderTop:`1px solid ${C.border}`,paddingTop:8}}>
+                      {fvmResult.note}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
             {rightTab==='geom' && (
               <div style={{padding:12,overflowY:'auto'}}>
                 <GeometryPanel
@@ -2190,6 +2645,7 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
           </div>
         </aside>
       </div>

@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
 const path  = require('path');
 const fs    = require('fs');
 const http  = require('http');
@@ -36,6 +36,7 @@ const BACKEND_EXE = app.isPackaged
 
 let mainWindow  = null;
 let backendProc = null;
+let tray        = null;
 
 // ── Backend başlatma ───────────────────────────────────────────────────────
 function startBackend(cfg) {
@@ -80,6 +81,17 @@ function startBackend(cfg) {
 ipcMain.handle('get-config',    ()      => loadConfig());
 ipcMain.handle('save-config',   (_, cfg) => { saveConfig(cfg); return true; });
 ipcMain.handle('get-version',   ()      => app.getVersion());
+ipcMain.handle('window-minimize',  () => mainWindow?.minimize());
+ipcMain.handle('window-maximize',  () => {
+  if (!mainWindow) return;
+  mainWindow.isMaximized() ? mainWindow.restore() : mainWindow.maximize();
+});
+ipcMain.handle('window-hide',      () => mainWindow?.hide());
+ipcMain.handle('window-close',     () => {
+  if (tray) mainWindow?.hide(); else app.exit(0);
+});
+ipcMain.handle('window-is-max',    () => mainWindow?.isMaximized() ?? false);
+
 ipcMain.handle('restart-backend', async () => {
   if (backendProc) { backendProc.kill(); backendProc = null; }
   const cfg = loadConfig();
@@ -96,13 +108,27 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
-    frame: process.platform !== 'darwin',
+    frame: true,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     show:  false,
-    backgroundColor: '#F0F2F5',
+    backgroundColor: '#0A0C0F',
     icon: path.join(__dirname, 'build', 'icon.ico'),
+    title: 'GeoPINN Studio 3.0',
   });
 
-  mainWindow.once('ready-to-show', () => mainWindow.show());
+  // Tam ekran — uygulama açılışında maximize
+  mainWindow.once('ready-to-show', () => {
+    mainWindow.maximize();
+    mainWindow.show();
+  });
+
+  // Kapatma → tepside sakla (Windows/Linux)
+  mainWindow.on('close', (e) => {
+    if (process.platform !== 'darwin' && tray) {
+      e.preventDefault();
+      mainWindow.hide();
+    }
+  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url); return { action: 'deny' };
   });
@@ -122,7 +148,46 @@ app.whenReady().then(async () => {
   createWindow();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
   });
+
+  // ── Sistem tepsisi ─────────────────────────────────────────────────────────
+  try {
+    const iconPath = path.join(__dirname, 'build', 'icon.ico');
+    const trayIcon = fs.existsSync(iconPath)
+      ? nativeImage.createFromPath(iconPath).resize({ width:16, height:16 })
+      : nativeImage.createEmpty();
+
+    tray = new Tray(trayIcon);
+    tray.setToolTip('GeoPINN Studio 3.0');
+
+    const contextMenu = Menu.buildFromTemplate([
+      { label: 'GeoPINN Studio', enabled: false },
+      { type: 'separator' },
+      { label: 'Pencereyi Göster', click: () => {
+          if (mainWindow) { mainWindow.show(); mainWindow.focus(); mainWindow.restore(); }
+      }},
+      { label: 'Tam Ekran', click: () => {
+          if (mainWindow) { mainWindow.show(); mainWindow.maximize(); }
+      }},
+      { type: 'separator' },
+      { label: 'Çıkış', click: () => {
+          tray = null;
+          if (backendProc) backendProc.kill();
+          app.exit(0);
+      }},
+    ]);
+
+    tray.setContextMenu(contextMenu);
+    // Tek tıkla pencereyi göster/gizle
+    tray.on('click', () => {
+      if (!mainWindow) return;
+      if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide();
+      else { mainWindow.show(); mainWindow.focus(); }
+    });
+  } catch(e) {
+    console.warn('[tray] Sistem tepsisi oluşturulamadı:', e.message);
+  }
 });
 
 app.on('window-all-closed', () => {

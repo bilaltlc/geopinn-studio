@@ -1,249 +1,264 @@
-# GeoPINN Studio 3.0
-
 <div align="center">
 
-**Applied Geophysics Desktop Application**  
-*Gravity · Magnetics · CSAMT — 3D Forward Modelling & Joint Inversion*
+```
+██████╗ ███████╗ ██████╗ ██████╗ ██╗███╗   ██╗███╗   ██╗
+██╔════╝ ██╔════╝██╔═══██╗██╔══██╗██║████╗  ██║████╗  ██║
+██║  ███╗█████╗  ██║   ██║██████╔╝██║██╔██╗ ██║██╔██╗ ██║
+██║   ██║██╔══╝  ██║   ██║██╔═══╝ ██║██║╚██╗██║██║╚██╗██║
+╚██████╔╝███████╗╚██████╔╝██║     ██║██║ ╚████║██║ ╚████║
+ ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝
+```
+
+**STUDIO 3.0** — Applied Geophysics Suite
+
+*Gravity · Magnetics · CSAMT · Radiometry · Heat Flow · FVM*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/Python-3.11+-blue.svg)](https://python.org)
+[![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C.svg)](https://pytorch.org)
+[![SimPEG](https://img.shields.io/badge/SimPEG-0.25.2-green.svg)](https://simpeg.xyz)
 [![Electron](https://img.shields.io/badge/Electron-33-47848F.svg)](https://electronjs.org)
-[![SimPEG](https://img.shields.io/badge/SimPEG-0.25-green.svg)](https://simpeg.xyz)
 
 </div>
 
 ---
 
-## Overview / Genel Bakış
+## Overview
 
-GeoPINN Studio is a cross-platform desktop application for 3D geophysical forward modelling and joint inversion. It integrates gravity, magnetic, and CSAMT methods with geological uncertainty quantification, targeting mineral exploration workflows.
+GeoPINN Studio is a desktop application for 3D geophysical forward modelling, joint inversion, and mineral exploration analysis. Built for REE-F-Ba-Th deposit exploration (Beylikova analogue), it integrates multiple geophysical methods in a unified GPU-accelerated environment.
 
-GeoPINN Studio, 3B jeofiziksel forward modelleme ve ortak ters çözüm için çapraz platform masaüstü uygulamasıdır. Gravite, manyetik ve CSAMT yöntemlerini jeolojik belirsizlik ölçümüyle entegre eder.
-
----
-
-## Screenshots / Ekran Görüntüleri
-
-### 3D Joint Inversion — Beylikova REE Vein Geometry
-![3D Joint Inversion](docs/screenshots/ss_3d_joint.png)
-*16³ grid · 200 iterations · 3 methods (Gravity + Magnetics + CSAMT) · Misfit 124.54 → 0.29*
-
-### Uncertainty Analysis — Mean Model
-![Uncertainty Mean](docs/screenshots/ss_uncertainty_mean.png)
-*8 realizations · 15% noise · 100% high confidence · RMSE 0.0666*
-
-### Uncertainty Analysis — Standard Deviation
-![Uncertainty Std](docs/screenshots/ss_uncertainty_std.png)
-*Purple regions: high variability between realizations (unreliable zones)*
-
-### Uncertainty Analysis — P10 (Pessimistic) & P90 (Optimistic)
-| P10 — Minimum Guaranteed | P90 — Optimistic |
-|:---:|:---:|
-| ![P10](docs/screenshots/ss_uncertainty_p10.png) | ![P90](docs/screenshots/ss_uncertainty_p90.png) |
-
-### Statistics & Cross-Method Correlation
-![Statistics](docs/screenshots/ss_stats_correlation.png)
-*Grav↔CSAMT = −0.748 · Mag↔CSAMT = −0.776 — classic REE-sulphide signature*
-
-### SimPEG Tikhonov L2 Inversion
-![SimPEG](docs/screenshots/ss_simpeg.png)
-*Adjoint-based · Gauss-Newton · Δρ = 390 kg/m³ · χ = 4.13×10⁻⁴ SI*
+**Architecture:** React + Three.js frontend · FastAPI backend · PyTorch GPU engines · Colab/local deployment
 
 ---
 
-## Key Results — Beylikova REE Analogue
+## v3.0.0.1 — What's New
 
-| Parameter | Value |
-|-----------|-------|
-| Inversion methods | Adam gradient (3-method joint) + SimPEG Tikhonov L2 |
-| Grid | 16³ voxels · 30 m/voxel · 480×480×480 m domain |
-| Final misfit | 124.54 → **0.29** (99.8% reduction) |
-| RMSE | **0.0666** |
-| Uncertainty confidence | **100% high**, 0% low (8 realizations) |
-| RMSE std across realizations | **0.0001** |
-| Guaranteed ore mass (P10) | **~0.11 Mt** |
-| Optimistic ore mass (P90) | **~0.12 Mt** |
-| Grav ↔ CSAMT correlation | **−0.748** |
-| Mag ↔ CSAMT correlation | **−0.776** |
+| Feature | Details |
+|---------|---------|
+| **Radiometry & Heat Flow** | U/Th/K → gammaray forward model, REE alteration index, FVM heat conduction |
+| **FVM Engine** | Poisson bounded domain solver, prism vs FVM comparison |
+| **Data Format Selector** | 7 geophysical formats auto-detected (CSV/XYZ/DAT) |
+| **Dual Theme** | Full dark `#0A0C0F` ↔ full light, persistent |
+| **Vertical Tab Rail** | 8 right-panel tabs in 46px icon rail |
+| **System Tray** | Minimize to tray, maximize on launch (Electron) |
 
 ---
 
-## Features / Özellikler
+## Screenshots
 
-**Geophysical Methods**
-- 3D Gravity Forward — Prism Nagy formula (mGal)
-- 3D Magnetics Forward — Bhattacharyya TMI (nT)
-- CSAMT/MT Forward — 1D Ward & Hohmann apparent resistivity
-- Joint Inversion — Adam optimizer, reg_lambda = 0.001 (tuned via grid search)
-- SimPEG Tikhonov L2 — Adjoint-based, Gauss-Newton, automatic beta scheduling
+### 3D Model — Beylikova Vein Geometry (32³ grid)
+![3D FVM](docs/screenshots/ss_fvm_3d.png)
+*Hydrotermal damar geometrisi — Gravite RMSE: 0.0126 mGal (FVM vs Prizma)*
 
-**Uncertainty Quantification**
-- Multi-realization inversion (3–15 realizations)
-- Statistical layers: Mean · Std Dev · CV (Coefficient of Variation) · P10 · P90
-- RMSE distribution chart across realizations
+### Radiometry Panel — U/Th/K & Heat Flow
+![Radiometry](docs/screenshots/ss_3d_radiometry.png)
+*Radyometri & radyojenik ısı akışı analizi — Y_beylikova_vein_64x64x64.npy*
 
-**Visualization**
-- Interactive 3D isosurface with viridis colormap (vertex-colored)
-- 2D cross-section viewer (X/Y/Z axes) with zoom, pan, pixel tooltip
-- REE anomaly map (max intensity projection, Z-axis)
-- Convergence charts, Pearson cross-correlation matrix
+### FVM vs Prism Comparison
+![FVM Panel](docs/screenshots/ss_fvm_panel.png)
+*Gravite RMSE: 0.0126 mGal · Göreli: 5.29% · Prizma: 0.148s · FVM: 7.245s*
 
-**Data & Export**
-- `.npy` dataset upload (Y geometry, X gravity/mag, X CSAMT)
-- Synthetic geometry generator: vein · pipe · lens · stratabound
-- Export: PNG anomaly map · CSV point cloud · TXT log
-- Analysis history with save/load (SQLite-backed JSON)
+### Cross-Section Views (X / Y / Z)
+![Slice X](docs/screenshots/ss_slice_x.png)
+![Slice Y](docs/screenshots/ss_slice_y.png)
+![Slice Z](docs/screenshots/ss_slice_z.png)
+*32³ grid üç eksen kesit — viridis renk skalası*
 
-**Backend Options**
-- Local: PyInstaller exe or Python uvicorn
-- Cloud GPU: Google Colab via ngrok (runtime-configurable, no rebuild)
+### Statistics — Joint Inversion Convergence
+![Statistics](docs/screenshots/ss_statistics.png)
+*Misfit: 124.54 → 0.389 (150 iter) · Grav↔Mag: 0.507 · Mag↔CSAMT: -0.775*
+
+### Data Panel — Format Selector
+![Data Panel](docs/screenshots/ss_data_panel.png)
+*Veri formatı otomatik tespit — Y/X/CSAMT dataset yönetimi*
+
+### Anomaly Export
+![Anomaly](docs/screenshots/ss_anomaly_export.png)
+*Dışa aktarılan Bouguer anomali haritası*
 
 ---
 
-## Installation / Kurulum
+## Physics Engines
 
-### Users — Download Binary
+### Forward Modelling
+| Engine | Method | Backend | GPU |
+|--------|--------|---------|-----|
+| `gravity_prism.py` | Nagy analytic | PyTorch | ✓ |
+| `magnetic_prism.py` | Bhattacharyya TMI | PyTorch | ✓ |
+| `csamt_1d.py` | Wait recursion MT | PyTorch | ✓ |
+| `gravity_fvm.py` | Poisson FVM (∇²U=4πGρ) | scipy.sparse | — |
+| `magnetic_fvm.py` | Poisson FVM (∇²φ=∇·M) | scipy.sparse | — |
+| `heat_flow_fvm.py` | Heat conduction (∇²T=-Q/k) | scipy.sparse | — |
+| `radiometry.py` | U/Th/K → gammaray forward | numpy | — |
 
-Get the latest installer from [Releases](../../releases):
+### Inversion
+| Method | Algorithm | Notes |
+|--------|----------|-------|
+| Joint Inversion | Adam + autograd | Grav + Mag + CSAMT simultaneous |
+| SimPEG Tikhonov | Gauss-Newton + adjoint | L2 regularization, sensitivity matrix |
+| Uncertainty (UQ) | Monte Carlo | n_realizations, CV/P10/P50/P90 |
 
-| Platform | File |
-|----------|------|
-| Windows | `GeoPINN.Studio.Setup.3.x.x.exe` |
-| macOS | `GeoPINN.Studio-3.x.x.dmg` |
-| Linux | `GeoPINN.Studio-3.x.x.AppImage` |
-
-### Developers — Run from Source
-
-```bash
-# Requirements: Node.js 20+, Python 3.11+
-
-git clone https://github.com/bilaltlc/geopinn-studio.git
-cd geopinn-studio
-
-# Frontend
-cd geopinn-frontend && npm install
-
-# Backend
-cd ../geopinn-backend
-pip install fastapi uvicorn numpy scipy torch simpeg discretize harmonica python-multipart
-
-# Terminal 1 — Frontend dev server
-cd geopinn-frontend && npm run dev
-
-# Terminal 2 — Backend
-cd geopinn-backend
-python -m uvicorn server:app --reload --host 127.0.0.1 --port 8000
+### Petrophyics (Beylikova REE Analogue)
+```
+ρ(x) = 2.70 + 2.00 × f(x)      [g/cm³]   density
+χ(x) = 1e-4 + 3e-4 × f(x)      [SI]      susceptibility  
+ρₑ(x) = 500 × 0.10^f(x)        [Ω·m]     resistivity
+Q(x)  = ρ·(9.52e-5·U + 2.56e-5·Th + 3.48e-6·K)  [W/m³]  heat production
 ```
 
-### Build Installer
+---
 
+## Workflow — Beylikova REE Exploration
+
+```
+① Geometry Generator
+   └─ Beylikova Vein type · dip=60° · depth=30-400m · width=60m
+        ↓
+② Forward Modelling  
+   └─ Gravity + Magnetics (GPU) · engine: Prism or FVM
+        ↓
+③ Radiometry & Heat Flow
+   └─ U/Th/K → Th/U ratio → REE alteration index → surface heat flux
+        ↓
+④ Joint Inversion
+   └─ Adam optimizer · 150 iter · 16³-64³ grid · Grav+Mag+CSAMT
+        ↓
+⑤ Uncertainty Analysis  
+   └─ 8 realizations · 5% noise · CV map · high-confidence zones
+        ↓
+⑥ FVM Validation
+   └─ Prism vs FVM RMSE · boundary effect check
+        ↓
+⑦ Export
+   └─ CSV (model points) · PNG (anomaly maps)
+```
+
+---
+
+## FVM Results (v3.0.0.1)
+
+Benchmark on `Y_beylikova_vein_32x32x32.npy` (32³ grid):
+
+| Method | RMSE | Max Diff | Rel. RMSE | Time |
+|--------|------|----------|-----------|------|
+| **Gravity** (mGal) | 0.0126 | 0.0257 | 5.29% | Prism: 0.148s · FVM: 7.245s |
+| **Magnetics** (nT) | 1.6218 | 7.5073 | 101.62% | Prism: 0.211s · FVM: 0.686s |
+
+> Magnetic FVM divergence (101%) is expected — FVM uses scalar potential approximation (∇²φ=∇·M) vs Bhattacharyya full tensor. Domain boundary effects dominate for thin vein geometries. Gravity FVM at 5.29% is within acceptable range.
+
+---
+
+## Installation
+
+### Prerequisites
+```bash
+# Backend
+pip install fastapi uvicorn numpy scipy torch pyngrok
+pip install simpeg discretize          # optional — SimPEG inversion
+pip install harmonica verde            # optional — validation
+
+# Frontend
+npm install
+```
+
+### Run (Development)
+```bash
+# 1. Start backend (local or Colab)
+cd geopinn-backend
+uvicorn server:app --host 127.0.0.1 --port 8000
+
+# 2. Start frontend
+cd geopinn-frontend
+npm run dev
+```
+
+### Run on Google Colab (GPU)
+```python
+# In Colab notebook:
+!pip install fastapi uvicorn pyngrok simpeg discretize
+from pyngrok import ngrok
+ngrok.set_auth_token("YOUR_TOKEN")
+# Run Server Başlat cell → copy ngrok URL → paste in app Settings
+```
+
+### Build Desktop App (Windows)
 ```bash
 cd geopinn-frontend
 npm run dist
-# → dist-electron/GeoPINN Studio Setup 3.x.x.exe
+# Output: dist-electron/GeoPINN Studio-win.zip
 ```
 
 ---
 
-## Colab GPU Mode / Colab GPU Modu
+## API Endpoints
 
-Run GPU-accelerated inversion without a local GPU:
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/health` | GET | Server status |
+| `/api/run-physics-engine` | POST | Forward modelling (prism/fvm) |
+| `/api/joint-inversion` | POST | Adam joint inversion |
+| `/api/uncertainty` | POST | Monte Carlo UQ |
+| `/api/simpeg/inversion` | POST | SimPEG Tikhonov L2 |
+| `/api/fvm/compare` | POST | Prism vs FVM benchmark |
+| `/api/radiometry/forward` | POST | U/Th/K → gammaray + heat flow |
+| `/api/generate-geometry` | POST | Synthetic geometry generator |
+| `/api/analyses` | GET/POST/DELETE | Analysis history |
+| `/api/data/list` | GET | Dataset management |
 
-1. Open `geopinn_colab_backend.ipynb` in [Google Colab](https://colab.research.google.com)
-2. Select **T4 GPU** runtime → Run all cells
-3. Copy the ngrok URL printed in the output
-4. In the app: click **"Bağlantı"** in the top toolbar
-5. Select **Colab GPU** mode, paste the URL → **Save & Connect**
-
-The URL is saved locally — update it via the same dialog whenever Colab generates a new session. No rebuild required.
-
-> **Idle protection:** The notebook auto-shuts down after 30 minutes of inactivity to conserve GPU quota.
+Full API docs: `http://localhost:8000/docs`
 
 ---
 
-## Architecture / Mimari
+## Data Formats
 
+| Format Key | Extensions | Columns |
+|-----------|-----------|---------|
+| `model_npy` | `.npy` | GeoPINN 3D grid |
+| `radiometry_csv` | `.csv .xyz .dat` | x, y, U_ppm, Th_ppm, K_pct |
+| `sp_csv` | `.csv .dat` | x, y, SP_mV |
+| `ip_csv` | `.csv .dat` | x_mid, depth, chargeability_ms, resistivity_ohmm |
+| `seismic_refrac_csv` | `.csv .dat` | offset_m, tt_ms |
+| `grav_csv` | `.csv .dat` | x, y, gz_mGal |
+| `mag_csv` | `.csv .dat` | x, y, TMI_nT |
+
+---
+
+## Roadmap
+
+### v3.1.0
+- [ ] `data_fusion.py` — multi-method composite anomaly score (Co-kriging)
+- [ ] IP forward engine — Cole-Cole complex resistivity
+- [ ] SP forward engine — electrokinetic coupling (∇²V = ∇·(L·∇T))
+- [ ] Field data gridding — irregular → regular (RBF interpolation)
+
+### v4.0.0 — PINN Integration
+- [ ] Physics-Informed Neural Networks — PDE loss (Laplace/Poisson)
+- [ ] PyTorch autograd physics layer (`physics_eqs.py`)
+- [ ] Multi-method PINN joint inversion
+- [ ] Transfer learning: synthetic → real field data
+
+---
+
+## Citation
+
+```bibtex
+@software{geopinn_studio_2026,
+  title   = {GeoPINN Studio: Applied Geophysics Desktop Suite},
+  version = {3.0.0.1},
+  year    = {2026},
+  url     = {https://github.com/bilaltlc/geopinn-studio},
+  note    = {Beylikova REE-F-Ba-Th exploration analogue}
+}
 ```
-geopinn-studio/
-├── geopinn-frontend/
-│   ├── src/App.jsx            # React UI (Three.js, Recharts)
-│   ├── main.cjs               # Electron main process
-│   ├── preload.cjs            # IPC context bridge
-│   └── scripts/build-backend.cjs
-│
-├── geopinn-backend/
-│   ├── server.py              # FastAPI + all inversion logic
-│   └── engines/
-│       ├── gravity_prism.py   # PyTorch gravity forward
-│       ├── magnetic_prism.py  # PyTorch magnetics forward
-│       ├── csamt_1d.py        # PyTorch CSAMT 1D
-│       ├── fvm_core.py        # FVM Poisson solver
-│       ├── petrophysics.py
-│       └── harmonica_validation.py
-│
-└── geopinn_colab_backend.ipynb  # Colab GPU backend
-```
-
----
-
-## Petrophysical Model — Beylikova REE-F-Ba-Th
-
-| Property | Formula | Host | Ore (f=1) |
-|----------|---------|------|-----------|
-| Density | ρ = 2.70 + 2.00×f [g/cm³] | 2.70 | 4.70 |
-| Susceptibility | χ = 1×10⁻⁴ + 3×10⁻⁴×f [SI] | 1×10⁻⁴ | 4×10⁻⁴ |
-| Resistivity | ρₑ = 500 × 0.10^f [Ω·m] | 500 | 50 |
-
-*f ∈ [0,1]: normalized ore density mask*
-
----
-
-## API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/api/health` | Backend status & version |
-| POST | `/api/run-physics-engine` | 3D forward modelling |
-| POST | `/api/joint-inversion` | Adam gradient joint inversion |
-| POST | `/api/simpeg/inversion` | SimPEG Tikhonov L2 |
-| POST | `/api/uncertainty` | Geological uncertainty quantification |
-| POST | `/api/generate-geometry` | Synthetic geometry generator |
-| POST | `/api/save-geometry` | Save geometry to uploads |
-| GET/POST/DELETE | `/api/analyses` | Analysis CRUD |
-| GET/POST/DELETE | `/api/data/*` | Dataset management |
-
----
-
-## Release New Version / Yeni Sürüm Yayınla
-
-```bash
-git tag v3.1.0
-git push origin v3.1.0
-# GitHub Actions builds Win/Mac/Linux installers automatically
-```
-
----
-
-## Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| UI | React 19, Three.js r185, Recharts 3, Lucide |
-| Desktop | Electron 33, electron-builder |
-| Build | Vite 7, PyInstaller |
-| Backend | FastAPI, uvicorn |
-| Inversion | PyTorch, SimPEG 0.25, discretize 0.12 |
-| Geophysics | harmonica, verde, ppigrf (IGRF14) |
-| Real data | EIGEN-6C4 (GitHub releases), IGRF14 (ppigrf) |
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)
 
 ---
 
 <div align="center">
-<sub>GeoPINN Studio 3.0 · Applied Geophysics Suite · 2026</sub>
+<sub>GeoPINN Studio · Applied Geophysics · geopinnstudio@geopinn.tr</sub>
 </div>
