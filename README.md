@@ -72,10 +72,6 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 ![Data Panel](docs/screenshots/ss_data_panel.png)
 *Veri formatı otomatik tespit — Y/X/CSAMT dataset yönetimi*
 
-### Anomaly Export
-![Anomaly](docs/screenshots/ss_anomaly_export.png)
-*Dışa aktarılan Bouguer anomali haritası*
-
 ---
 
 ## Physics Engines

@@ -26,6 +26,22 @@ from pydantic import BaseModel, Field
 
 # Fizik motorları (proje içindeki engines/ klasöründen)
 from engines import gravity_prism, magnetic_prism, csamt_1d
+try:
+    from engines.gravity_fvm import PrismGravityForwardFVM
+    from engines.magnetic_fvm import PrismMagneticForwardFVM
+    FVM_AVAILABLE = True
+except ImportError:
+    FVM_AVAILABLE = False
+
+try:
+    from engines.heat_flow_fvm import HeatFlowFVM, radiogenic_heat_production
+    from engines.radiometry import (
+        forward_radiometry_surface, ree_alteration_index,
+        radiometry_stats, read_field_data, detect_format, SUPPORTED_FORMATS,
+    )
+    RADIOMETRY_AVAILABLE = True
+except ImportError:
+    RADIOMETRY_AVAILABLE = False
 
 app = FastAPI(title="GeoPINN Studio API", version="3.0")
 
@@ -63,9 +79,10 @@ class SimulationRequest(BaseModel):
     mag_active: bool = True
     csamt_active: bool = False
     selected_index: int = 0
-    dataset: Optional[str] = None          # Y_... model küpü
-    dataset_gravmag: Optional[str] = None  # X_mag_grav_... gerçek gözlem (run-physics bilgi amaçlı)
-    dataset_csamt: Optional[str] = None    # X_csamt_... gerçek gözlem
+    dataset: Optional[str] = None
+    dataset_gravmag: Optional[str] = None
+    dataset_csamt: Optional[str] = None
+    engine_mode: str = "prism"   # "prism" (analitik Nagy/Bhattacharyya) | "fvm" (Poisson bounded)
 
 
 class JointInversionRequest(BaseModel):
@@ -185,20 +202,32 @@ def resample_to_forward(model_native: np.ndarray, nbc: int = NBC_FORWARD):
 
 
 # ── Yardımcılar: tekil fizik motoru çağrıları (run_physics + joint_inversion ORTAK) ──
-def forward_grav(model_fwd: np.ndarray, grids: dict) -> np.ndarray:
-    """(21,21) gz değerleri döndürür."""
+def forward_grav(model_fwd: np.ndarray, grids: dict, engine_mode: str = "prism") -> np.ndarray:
+    """(21,21) gz değerleri döndürür. engine_mode: 'prism' | 'fvm'"""
     density_contrast = model_fwd * DENSITY_SCALE
+    if engine_mode == "fvm" and FVM_AVAILABLE:
+        eng_g = PrismGravityForwardFVM(pad_cells=8)
+        gz = eng_g.calculate(density_contrast, grids["x_c"], grids["y_c"], grids["z_c"],
+                              grids["obs_x"], grids["obs_y"])
+        return np.asarray(gz).reshape(21, 21)
     eng_g = gravity_prism.PrismGravityForward()
-    gz = eng_g.calculate(density_contrast, grids["x_c"], grids["y_c"], grids["z_c"], grids["obs_x"], grids["obs_y"])
+    gz = eng_g.calculate(density_contrast, grids["x_c"], grids["y_c"], grids["z_c"],
+                         grids["obs_x"], grids["obs_y"])
     gz_np = gz.cpu().numpy() if hasattr(gz, "cpu") else np.array(gz)
     return np.asarray(gz_np).reshape(21, 21)
 
 
-def forward_mag(model_fwd: np.ndarray, grids: dict) -> np.ndarray:
-    """(21,21) toplam alan anomalisi döndürür."""
+def forward_mag(model_fwd: np.ndarray, grids: dict, engine_mode: str = "prism") -> np.ndarray:
+    """(21,21) toplam alan anomalisi döndürür. engine_mode: 'prism' | 'fvm'"""
     chi_contrast = model_fwd * SUSCEPT_SCALE
+    if engine_mode == "fvm" and FVM_AVAILABLE:
+        eng_m = PrismMagneticForwardFVM(inc_deg=60.0, dec_deg=5.0, b0_nt=47000.0, pad_cells=16)
+        dt = eng_m.calculate(chi_contrast, grids["x_c"], grids["y_c"], grids["z_c"],
+                              grids["obs_x"], grids["obs_y"])
+        return np.asarray(dt).reshape(21, 21)
     eng_m = magnetic_prism.PrismMagneticForward(inc_deg=60.0, dec_deg=5.0, b0_nt=47000.0)
-    dt = eng_m.calculate(chi_contrast, grids["x_c"], grids["y_c"], grids["z_c"], grids["obs_x"], grids["obs_y"])
+    dt = eng_m.calculate(chi_contrast, grids["x_c"], grids["y_c"], grids["z_c"],
+                         grids["obs_x"], grids["obs_y"])
     dt_np = dt.cpu().numpy() if hasattr(dt, "cpu") else np.array(dt)
     return np.asarray(dt_np).reshape(21, 21)
 
@@ -365,14 +394,14 @@ def run_physics(req: SimulationRequest):
 
     if req.grav_active:
         try:
-            gz_np = forward_grav(model_fwd, grids)
+            gz_np = forward_grav(model_fwd, grids, engine_mode=getattr(req,'engine_mode','prism'))
             results["Gravite"] = float(gz_np.max())
         except Exception as e:
             results["Gravite_hata"] = str(e)
 
     if req.mag_active:
         try:
-            dt_np = forward_mag(model_fwd, grids)
+            dt_np = forward_mag(model_fwd, grids, engine_mode=getattr(req,'engine_mode','prism'))
             results["Manyetik"] = float(dt_np.max())
         except Exception as e:
             results["Manyetik_hata"] = str(e)
@@ -1208,6 +1237,319 @@ def delete_analysis(analysis_id: str):
         pass
     os.remove(path)
     return {"deleted": analysis_id}
+
+
+# ── Veri Formatı Seçici ────────────────────────────────────────────────────────
+@app.get("/api/data/formats")
+def list_data_formats():
+    """Desteklenen veri formatlarını ve beklenen sütunları döndürür."""
+    return {"formats": SUPPORTED_FORMATS if RADIOMETRY_AVAILABLE else {
+        "model_npy": {"extensions":[".npy"],"description":"GeoPINN 3D model grid","columns":[],"optional":[]}
+    }}
+
+
+@app.post("/api/data/detect-format")
+async def detect_data_format(file: UploadFile = File(...)):
+    """Yüklenen dosyanın formatını otomatik tespit eder."""
+    content_bytes = await file.read(2048)
+    try:
+        header = content_bytes.decode('utf-8-sig', errors='replace')
+    except Exception:
+        header = ""
+    fmt = detect_format(file.filename, header) if RADIOMETRY_AVAILABLE else "unknown"
+    fmt_info = SUPPORTED_FORMATS.get(fmt, {}) if RADIOMETRY_AVAILABLE else {}
+    return {
+        "filename":    file.filename,
+        "detected":    fmt,
+        "description": fmt_info.get("description", "Bilinmeyen format"),
+        "expected_columns": fmt_info.get("columns", []),
+        "optional_columns": fmt_info.get("optional", []),
+        "confidence":  "high" if fmt != "unknown" else "low",
+    }
+
+
+# ── Radyometri & Isı Akışı ────────────────────────────────────────────────────
+class RadiometryRequest(BaseModel):
+    dataset: Optional[str] = None          # Y_... model küpü (U/Th/K normalize [0,1])
+    selected_index: int = 0
+    # Petrofizik ölçekleme (modeli gerçek konsantrasyona dönüştür)
+    u_background_ppm:  float = 3.0
+    u_ore_ppm:         float = 15.0
+    th_background_ppm: float = 12.0
+    th_ore_ppm:        float = 60.0
+    k_background_pct:  float = 2.5
+    k_ore_pct:         float = 4.5
+    # Isı akışı parametreleri
+    k_thermal:  float = 2.5    # W/(m·K) — kireçtaşı host
+    T_surface:  float = 15.0   # °C
+    T_base:     float = 65.0   # °C
+    # Hangi çıktılar isteniyor
+    compute_heat_flow:   bool = True
+    compute_radiometry:  bool = True
+    compute_ree_index:   bool = True
+
+
+@app.post("/api/radiometry/forward")
+def radiometry_forward(req: RadiometryRequest):
+    """
+    Cevher modeli → U/Th/K konsantrasyonu → radyometri + ısı akışı.
+
+    Model [0,1] normalize değerleri arka plan + cevher arasında lineer interpole eder.
+    """
+    if not RADIOMETRY_AVAILABLE:
+        raise HTTPException(status_code=503,
+            detail="Radyometri modülleri yüklenemedi. engines/radiometry.py ve heat_flow_fvm.py kontrol edin.")
+
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+
+    n = model_fwd.shape[0]
+    f = model_fwd  # [0,1]
+
+    # Model → konsantrasyon
+    u_grid  = req.u_background_ppm  + f * (req.u_ore_ppm  - req.u_background_ppm)
+    th_grid = req.th_background_ppm + f * (req.th_ore_ppm - req.th_background_ppm)
+    k_grid  = req.k_background_pct  + f * (req.k_ore_pct  - req.k_background_pct)
+
+    result = {
+        "dataset_used": os.path.basename(used_path) if used_path else "demo_sentetik",
+        "grid_size": n,
+        "petrophys": {
+            "u_range_ppm":  [req.u_background_ppm, req.u_ore_ppm],
+            "th_range_ppm": [req.th_background_ppm, req.th_ore_ppm],
+            "k_range_pct":  [req.k_background_pct, req.k_ore_pct],
+        }
+    }
+
+    if req.compute_radiometry:
+        rad = forward_radiometry_surface(u_grid, th_grid, k_grid)
+        result["radiometry"] = {
+            "TC_cps":     rad["TC_cps"].tolist(),
+            "U_cps":      rad["U_cps"].tolist(),
+            "Th_cps":     rad["Th_cps"].tolist(),
+            "K_cps":      rad["K_cps"].tolist(),
+            "eU_ppm":     rad["eU_ppm"].tolist(),
+            "Th_U":       np.nan_to_num(rad["Th_U"], nan=0).tolist(),
+            "dose_nGy_h": rad["dose_nGy_h"].tolist(),
+            "stats": {
+                "TC_max":   float(rad["TC_cps"].max()),
+                "TC_mean":  float(rad["TC_cps"].mean()),
+                "Th_U_max": float(np.nanmax(rad["Th_U"])),
+                "dose_max": float(rad["dose_nGy_h"].max()),
+            }
+        }
+
+    if req.compute_ree_index:
+        idx = ree_alteration_index(u_grid, th_grid, k_grid)
+        result["ree_index"] = {
+            "composite_score":  idx["composite_score"].tolist(),
+            "ree_target_prob":  idx["ree_target_prob"].tolist(),
+            "Th_U_ratio":       np.nan_to_num(idx["Th_U_ratio"], nan=0).tolist(),
+            "eU_ppm":           idx["eU_ppm"].tolist(),
+            "stats": {
+                "max_prob":        float(idx["ree_target_prob"].max()),
+                "high_prob_cells": int((idx["ree_target_prob"] > 0.5).sum()),
+                "Th_U_mean":       float(np.nanmean(idx["Th_U_ratio"])),
+                "interpretation":  "Yüksek REE hedef olasılığı" if idx["ree_target_prob"].max() > 0.6
+                                   else "Orta/düşük REE sinyali",
+            }
+        }
+
+    if req.compute_heat_flow:
+        eng = HeatFlowFVM(
+            k_thermal=req.k_thermal,
+            T_surface=req.T_surface,
+            T_base=req.T_base,
+        )
+        hf = eng.calculate(
+            u_grid, th_grid, k_grid,
+            grids["x_c"], grids["y_c"], grids["z_c"],
+            depth_indices=[0, n//4, n//2],
+        )
+        result["heat_flow"] = {
+            "surface_flux_mw_m2": hf["heat_flux_mw_m2"],
+            "T_field_degC":       hf["T_field"],
+            "Q_field_W_m3":       hf["Q_field"],
+            "stats":              hf["stats"],
+        }
+
+    return result
+
+
+@app.post("/api/radiometry/upload-field-data")
+async def upload_radiometry_field_data(
+    file: UploadFile = File(...),
+    format_hint: str = "auto",
+):
+    """
+    Saha radyometri/SP/IP/sismik verisini yükler, parse eder ve özet döndürür.
+    format_hint: 'auto' | 'radiometry_csv' | 'sp_csv' | 'ip_csv' | ...
+    """
+    if not file.filename.endswith(('.csv','.xyz','.dat','.txt','.npy')):
+        raise HTTPException(status_code=400,
+            detail="Desteklenen formatlar: .csv, .xyz, .dat, .txt, .npy")
+
+    import tempfile
+    contents = await file.read()
+    safe = _safe_npy_name(file.filename) if file.filename.endswith('.npy') else            re.sub(r'[^A-Za-z0-9_\-\.]', '_', file.filename)
+    dest = os.path.join(UPLOAD_DIR, safe)
+    with open(dest, 'wb') as f:
+        f.write(contents)
+
+    if not RADIOMETRY_AVAILABLE:
+        return {"filename": safe, "size_kb": round(len(contents)/1024,1),
+                "detected_format": "unknown", "note": "Radiometry modülü yüklü değil"}
+
+    try:
+        header = contents[:1024].decode('utf-8-sig', errors='replace')
+        detected = detect_format(file.filename, header) if format_hint == 'auto' else format_hint
+        data, fmt = read_field_data(dest, detected)
+        stats = radiometry_stats(data) if fmt == "radiometry_csv" else {}
+        return {
+            "filename":        safe,
+            "size_kb":         round(len(contents)/1024, 1),
+            "detected_format": fmt,
+            "n_points":        data.get("_n_points", 0),
+            "columns":         [k for k in data if not k.startswith('_')],
+            "stats":           stats,
+            "format_info":     SUPPORTED_FORMATS.get(fmt, {}),
+        }
+    except Exception as e:
+        return {"filename": safe, "error": str(e), "detected_format": "unknown"}
+
+
+@app.get("/api/radiometry/status")
+def radiometry_status():
+    return {
+        "available": RADIOMETRY_AVAILABLE,
+        "supported_formats": list(SUPPORTED_FORMATS.keys()) if RADIOMETRY_AVAILABLE else [],
+        "methods": {
+            "forward_radiometry": "U/Th/K → Gammaray sayımı, Th/U oranı, eU",
+            "heat_flow":          "U/Th/K → Radyojenik ısı üretimi → Yüzey ısı akışı (FVM)",
+            "ree_index":          "Bileşik REE anomali skoru (Th/U, eU, K/Th)",
+            "field_data_upload":  "Saha verisi yükleme (CSV/XYZ/DAT)",
+        }
+    }
+
+
+# ── Seismic + Methods (eski frontend uyumluluğu) ─────────────────────────────
+VP_CLASSES_TABLE = [
+    {"id":1,"label":"Q1 — Toprak/Dolgu",         "vp_min":0,    "vp_max":800,  "color":"#8B5E3C","rqd":0, "ucs_mpa":0,  "drill_factor":0.3},
+    {"id":2,"label":"Q2 — Ayrışmış Kaya",          "vp_min":800,  "vp_max":1800, "color":"#C8874A","rqd":10,"ucs_mpa":10, "drill_factor":0.5},
+    {"id":3,"label":"Q3 — Kırıklı Kaya (Zayıf)",  "vp_min":1800, "vp_max":3000, "color":"#D4B84A","rqd":30,"ucs_mpa":30, "drill_factor":0.7},
+    {"id":4,"label":"Q4 — Kırıklı Sağlam",         "vp_min":3000, "vp_max":4000, "color":"#5A8A3C","rqd":60,"ucs_mpa":60, "drill_factor":1.0},
+    {"id":5,"label":"Q5 — Sağlam Granit/Kireç",   "vp_min":4000, "vp_max":5500, "color":"#2E6B8A","rqd":85,"ucs_mpa":120,"drill_factor":1.8},
+    {"id":6,"label":"Q6 — Sert Bazalt/Kuvarsit",   "vp_min":5500, "vp_max":9999, "color":"#1C2E5E","rqd":95,"ucs_mpa":200,"drill_factor":3.0},
+]
+
+@app.get("/api/seismic/vp-classes")
+def seismic_vp_classes():
+    return {"classes": VP_CLASSES_TABLE, "engine_available": True}
+
+
+@app.get("/api/methods")
+def list_methods():
+    return {
+        "methods": [
+            {"id":"gravity",    "label":"Gravite",            "available":True,  "engine":"gravity_prism (Nagy analitik)",         "gpu":True},
+            {"id":"magnetic",   "label":"Manyetik (TMI)",     "available":True,  "engine":"magnetic_prism (Bhattacharyya)",        "gpu":True},
+            {"id":"csamt",      "label":"CSAMT / MT",         "available":True,  "engine":"csamt_1d (Wait özyineleme)",            "gpu":True},
+            {"id":"joint_inv",  "label":"Joint Inversion",    "available":True,  "engine":"Adam + autograd",                       "gpu":True},
+            {"id":"simpeg",     "label":"SimPEG Tikhonov",    "available":SIMPEG_AVAILABLE, "engine":"SimPEG L2 Gauss-Newton",    "gpu":False},
+            {"id":"uncertainty","label":"Belirsizlik (UQ)",   "available":True,  "engine":"Monte Carlo realizasyonları",           "gpu":True},
+            {"id":"fvm",        "label":"FVM (Poisson)",      "available":FVM_AVAILABLE,    "engine":"fvm_core scipy CG",         "gpu":False},
+            {"id":"radiometry", "label":"Radyometri / Isı",   "available":RADIOMETRY_AVAILABLE, "engine":"heat_flow_fvm + radiometry","gpu":False},
+            {"id":"harmonica",  "label":"Harmonica Doğrulama","available":HARMONICA_AVAILABLE,  "engine":"Fatiando a Terra",      "gpu":False},
+        ]
+    }
+
+
+# ── FVM Motor Durumu & Karşılaştırma ──────────────────────────────────────────
+@app.get("/api/fvm/status")
+def fvm_status():
+    return {
+        "available": FVM_AVAILABLE,
+        "engines": {
+            "prism": {"name": "Analitik Prizma (Nagy / Bhattacharyya)",
+                      "type": "closed-form", "gpu": True,
+                      "desc": "Sonsuz homojen uzay Green fonksiyonu — hızlı, analitik"},
+            "fvm":   {"name": "Sonlu Hacimler (Poisson, bounded domain)",
+                      "type": "numerical", "gpu": False,
+                      "desc": "∇²U = kaynak, Dirichlet BC — sınırlı domain, daha gerçekçi sınır koşulları"},
+        }
+    }
+
+
+class FVMCompareRequest(BaseModel):
+    dataset: Optional[str] = None
+    selected_index: int = 0
+    grav_active: bool = True
+    mag_active: bool = True
+
+
+@app.post("/api/fvm/compare")
+def fvm_compare(req: FVMCompareRequest):
+    """Prizma (analitik) ve FVM (nümerik) motorlarını aynı model üzerinde çalıştırır,
+    sonuçları ve farkı (RMSE, maksimum sapma) döndürür."""
+    if not FVM_AVAILABLE:
+        raise HTTPException(status_code=503,
+            detail="FVM modülleri yüklenemedi. engines/gravity_fvm.py ve magnetic_fvm.py kontrol edin.")
+
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+
+    result = {}
+
+    if req.grav_active:
+        import time
+        t0 = time.perf_counter()
+        gz_prism = forward_grav(model_fwd, grids, engine_mode="prism")
+        t_prism = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        gz_fvm   = forward_grav(model_fwd, grids, engine_mode="fvm")
+        t_fvm = time.perf_counter() - t0
+
+        diff = gz_prism - gz_fvm
+        result["gravity"] = {
+            "prism":      gz_prism.tolist(),
+            "fvm":        gz_fvm.tolist(),
+            "diff":       diff.tolist(),
+            "rmse_mgal":  float(np.sqrt(np.mean(diff**2))),
+            "max_diff_mgal": float(np.max(np.abs(diff))),
+            "rel_rmse_pct": float(np.sqrt(np.mean(diff**2)) / (np.std(gz_prism)+1e-12) * 100),
+            "time_prism_s": round(t_prism, 4),
+            "time_fvm_s":   round(t_fvm, 4),
+        }
+
+    if req.mag_active:
+        import time
+        t0 = time.perf_counter()
+        dt_prism = forward_mag(model_fwd, grids, engine_mode="prism")
+        t_prism = time.perf_counter() - t0
+
+        t0 = time.perf_counter()
+        dt_fvm   = forward_mag(model_fwd, grids, engine_mode="fvm")
+        t_fvm = time.perf_counter() - t0
+
+        diff = dt_prism - dt_fvm
+        result["magnetic"] = {
+            "prism":      dt_prism.tolist(),
+            "fvm":        dt_fvm.tolist(),
+            "diff":       diff.tolist(),
+            "rmse_nt":    float(np.sqrt(np.mean(diff**2))),
+            "max_diff_nt": float(np.max(np.abs(diff))),
+            "rel_rmse_pct": float(np.sqrt(np.mean(diff**2)) / (np.std(dt_prism)+1e-12) * 100),
+            "time_prism_s": round(t_prism, 4),
+            "time_fvm_s":   round(t_fvm, 4),
+        }
+
+    return {
+        "result": result,
+        "dataset_used": os.path.basename(used_path) if used_path else "demo_sentetik",
+        "grid_size": NBC_FORWARD,
+        "note": "FVM sınırlı domain (Dirichlet BC), Prizma sonsuz uzay (Green fn)."
+    }
 
 
 # ── PyInstaller / Electron giriş noktası ──────────────────────────────────────
