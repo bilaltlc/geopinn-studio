@@ -61,6 +61,13 @@
 - `theme is not defined` ReferenceError — `useTheme()` App fonksiyonu içine alındı
 - ngrok 5 tunnel limiti — `ngrok.kill()` ile temizleme adımı eklendi
 
+### Known Issues / Dikkat
+
+- **reg_lambda hassasiyeti:** `0.05` üzerinde düzenlileştirme misfit'i bozabilir. Şu an manuel ayar gerekiyor — v3.1'de GradNorm adaptive balancing planlanıyor.
+- **Yüksek grid maliyeti:** `32³` üzeri FVM ve SimPEG inversiyonları CPU-bound, bellek yoğun.
+- **Jeolojik validasyon eksik:** Kütle/hacim tahminleri model-tutarlı, sondaj verisiyle çapraz doğrulanmamış.
+- **1D CSAMT kısıtı:** Karmaşık 3D yapılarda 2D/3D etkiler modellere yansımıyor.
+
 ---
 
 ## [v3.0.0] — 2026-07-01

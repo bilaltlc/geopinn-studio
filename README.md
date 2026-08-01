@@ -249,6 +249,36 @@ Full API docs: `http://localhost:8000/docs`
 
 ---
 
+
+---
+
+## Known Limitations & Future Work
+
+### 1. Hyperparameter Sensitivity
+The regularization weight `reg_lambda` and per-method weights (gravity/magnetics/CSAMT) require manual tuning. Small increases in `reg_lambda` can degrade misfit and RMSE rapidly, indicating sensitivity to loss term balance.
+
+**Planned fix (v3.1):** Adaptive Loss Balancing (GradNorm or uncertainty weighting) — automatic per-method weight adjustment during joint inversion.
+
+### 2. Computational Cost at High Resolution
+At `32³` or higher grid resolution, inversion time increases significantly. GPU memory management (PyTorch CUDA) must be stable end-to-end for large field datasets. FVM solver (scipy.sparse CG) is CPU-only and scales poorly beyond `32³`.
+
+**Planned fix (v3.1):** GPU-accelerated sparse solver option; adaptive grid refinement (coarse → fine).
+
+### 3. Geological Validation Gap
+Current mass (20.7 Mt) and volume (36.5 Mm³) estimates are mathematically convergent but have not been cross-validated against:
+- Known geological cross-sections of the Beylikova area
+- Drill-hole data (lithology, assay)
+- Published REE deposit analogues (Bayan Obo, Mountain Pass)
+
+**For academic use:** Results should be treated as forward-model-consistent estimates, not ground-truth reserves. Systematic validation against borehole data is required before any resource classification.
+
+### 4. 1D CSAMT Assumption
+The CSAMT engine (`csamt_1d.py`) uses a 1D layered earth model (Wait recursion). Real CSAMT data in structurally complex terrains (fault zones, steeply dipping veins) will show 2D/3D effects not captured by 1D inversion.
+
+**Planned fix (v4.0):** 2.5D CSAMT forward operator integrated with PINN framework.
+
+---
+
 ## License
 
 MIT License — see [LICENSE](LICENSE)
