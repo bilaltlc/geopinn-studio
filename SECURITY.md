@@ -9,6 +9,6 @@
 
 ## Reporting a Vulnerability
 
-Report security vulnerabilities privately to: geopinnstudio@geopinn.tr
+Report security vulnerabilities privately to: telcihamdibilal@gmail.com
 
 Do not open public issues for security vulnerabilities.

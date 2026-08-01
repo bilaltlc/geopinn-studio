@@ -47,29 +47,29 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 ## Screenshots
 
 ### 3D Model — Beylikova Vein Geometry (32³ grid)
-![3D FVM](docs/screenshots/ss_fvm_3d.png)
+![3D FVM](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fvm_3d.png)
 *Hydrotermal damar geometrisi — Gravite RMSE: 0.0126 mGal (FVM vs Prizma)*
 
 ### Radiometry Panel — U/Th/K & Heat Flow
-![Radiometry](docs/screenshots/ss_3d_radiometry.png)
+![Radiometry](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_3d_radiometry.png)
 *Radyometri & radyojenik ısı akışı analizi — Y_beylikova_vein_64x64x64.npy*
 
 ### FVM vs Prism Comparison
-![FVM Panel](docs/screenshots/ss_fvm_panel.png)
+![FVM Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fvm_panel.png)
 *Gravite RMSE: 0.0126 mGal · Göreli: 5.29% · Prizma: 0.148s · FVM: 7.245s*
 
 ### Cross-Section Views (X / Y / Z)
-![Slice X](docs/screenshots/ss_slice_x.png)
-![Slice Y](docs/screenshots/ss_slice_y.png)
-![Slice Z](docs/screenshots/ss_slice_z.png)
+![Slice X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_x.png)
+![Slice Y](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_y.png)
+![Slice Z](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_z.png)
 *32³ grid üç eksen kesit — viridis renk skalası*
 
 ### Statistics — Joint Inversion Convergence
-![Statistics](docs/screenshots/ss_statistics.png)
+![Statistics](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_statistics.png)
 *Misfit: 124.54 → 0.389 (150 iter) · Grav↔Mag: 0.507 · Mag↔CSAMT: -0.775*
 
 ### Data Panel — Format Selector
-![Data Panel](docs/screenshots/ss_data_panel.png)
+![Data Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_data_panel.png)
 *Veri formatı otomatik tespit — Y/X/CSAMT dataset yönetimi*
 
 ---
@@ -256,5 +256,5 @@ MIT License — see [LICENSE](LICENSE)
 ---
 
 <div align="center">
-<sub>GeoPINN Studio · Applied Geophysics · geopinnstudio@geopinn.tr</sub>
+<sub>GeoPINN Studio · Applied Geophysics · telcihamdibilal@gmail.com</sub>
 </div>

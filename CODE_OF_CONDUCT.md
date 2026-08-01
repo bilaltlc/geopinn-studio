@@ -12,4 +12,4 @@ This code of conduct applies to all project spaces including issues, pull reques
 
 ## Contact
 
-geopinnstudio@geopinn.tr
+telcihamdibilal@gmail.com

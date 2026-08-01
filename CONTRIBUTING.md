@@ -52,4 +52,4 @@ geopinn-frontend/
 
 ## Contact
 
-geopinnstudio@geopinn.tr
+telcihamdibilal@gmail.com
