@@ -31,7 +31,7 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ---
 
-## v3.0.0.1 — What's New
+## v3.0.0.2 — What's New
 
 | Feature | Details |
 |---------|---------|
