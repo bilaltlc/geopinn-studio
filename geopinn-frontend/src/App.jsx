@@ -15,6 +15,154 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { MarchingCubes } from 'three/examples/jsm/objects/MarchingCubes.js';
 
+// ─── FloatingPanel: sürüklenebilir, yeniden boyutlandırılabilir panel ────────
+function FloatingPanel({ id, title, icon: Icon, children, onClose,
+  defaultPos={x:200,y:100}, defaultSize={w:340,h:480},
+  minW=280, minH=200, accent=null }) {
+  const [pos,  setPos]  = useState(defaultPos);
+  const [size, setSize] = useState(defaultSize);
+  const [min,  setMin]  = useState(false);  // minimize
+  const dragRef  = useRef(null);
+  const resizeRef= useRef(null);
+  const panelRef = useRef(null);
+
+  // Sürükleme
+  const onHeaderDown = (e) => {
+    if (e.target.closest('button')) return;
+    const ox=e.clientX-pos.x, oy=e.clientY-pos.y;
+    dragRef.current = {ox,oy};
+    const onMove=(e)=>setPos({x:e.clientX-dragRef.current.ox, y:e.clientY-dragRef.current.oy});
+    const onUp=()=>{ dragRef.current=null; window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('mouseup',onUp);
+  };
+
+  // Yeniden boyutlandırma (sağ-alt köşe)
+  const onResizeDown = (e) => {
+    e.stopPropagation();
+    const sx=e.clientX, sy=e.clientY, sw=size.w, sh=size.h;
+    const onMove=(e)=>setSize({w:Math.max(minW,sw+e.clientX-sx), h:Math.max(minH,sh+e.clientY-sy)});
+    const onUp=()=>{ window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
+    window.addEventListener('mousemove',onMove);
+    window.addEventListener('mouseup',onUp);
+  };
+
+  const col = accent || C.accent;
+
+  return (
+    <div ref={panelRef} style={{
+      position:'fixed', left:pos.x, top:pos.y, zIndex:1000,
+      width:size.w, height: min?36:size.h,
+      background:C.panel, border:`1.5px solid ${col}40`,
+      borderRadius:6, boxShadow:'0 8px 32px rgba(0,0,0,0.5)',
+      display:'flex', flexDirection:'column', overflow:'hidden',
+      transition: min?'height 0.15s':'none',
+      resize:'none',
+    }}>
+      {/* Başlık çubuğu */}
+      <div onMouseDown={onHeaderDown} style={{
+        height:34, background:`${col}15`, borderBottom:`1px solid ${col}30`,
+        display:'flex', alignItems:'center', padding:'0 8px', gap:6,
+        cursor:'move', flexShrink:0, userSelect:'none',
+      }}>
+        {Icon && <Icon size={12} color={col}/>}
+        <span style={{flex:1, fontSize:11, fontWeight:700, color:C.text,
+          letterSpacing:'0.04em', textTransform:'uppercase'}}>{title}</span>
+        {/* Harici monitöre taşı — sadece Electron'da */}
+        {window.electronAPI && (
+          <button
+            onClick={()=>{
+              if(panelRef.current) {
+                const r=panelRef.current.getBoundingClientRect();
+                window.electronAPI.moveToExternalDisplay?.({
+                  x:Math.round(r.left), y:Math.round(r.top),
+                  w:Math.round(r.width), h:Math.round(r.height)
+                });
+              }
+            }}
+            title="Harici monitöre taşı"
+            style={{width:20,height:20,border:'none',borderRadius:3,cursor:'pointer',
+              background:'transparent',color:C.textMid,fontSize:11,
+              display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ⊞
+          </button>
+        )}
+        {/* Ayrı pencere olarak aç — Electron'da gerçek BrowserWindow */}
+        {window.electronAPI && (
+          <button
+            onClick={()=>{
+              const r=panelRef.current?.getBoundingClientRect();
+              window.electronAPI.openPanelWindow?.({
+                panelId: id,
+                x: r ? Math.round(window.screenX + r.left) : 300,
+                y: r ? Math.round(window.screenY + r.top)  : 200,
+                w: size.w, h: size.h,
+              });
+            }}
+            title="Ayrı pencere olarak aç"
+            style={{width:20,height:20,border:'none',borderRadius:3,cursor:'pointer',
+              background:'transparent',color:C.textMid,fontSize:11,
+              display:'flex',alignItems:'center',justifyContent:'center'}}>
+            ⧉
+          </button>
+        )}
+        <button onClick={()=>setMin(v=>!v)}
+          style={{width:20,height:20,border:'none',borderRadius:3,cursor:'pointer',
+            background:'transparent',color:C.textMid,fontSize:12,
+            display:'flex',alignItems:'center',justifyContent:'center'}}>
+          {min?'▲':'▼'}
+        </button>
+        <button onClick={onClose}
+          style={{width:20,height:20,border:'none',borderRadius:3,cursor:'pointer',
+            background:'transparent',fontSize:13,
+            display:'flex',alignItems:'center',justifyContent:'center',color:C.textMid}}
+          onMouseEnter={e=>e.target.style.background='#C42B1C55'}
+          onMouseLeave={e=>e.target.style.background='transparent'}>
+          ✕
+        </button>
+      </div>
+
+      {/* İçerik */}
+      {!min && (
+        <div style={{flex:1, overflowY:'auto', position:'relative'}}>
+          {children}
+        </div>
+      )}
+
+      {/* Resize tutacağı */}
+      {!min && (
+        <div onMouseDown={onResizeDown} style={{
+          position:'absolute', bottom:0, right:0, width:14, height:14,
+          cursor:'nwse-resize', opacity:0.4,
+          background:`linear-gradient(135deg, transparent 50%, ${col} 50%)`,
+          borderRadius:'0 0 4px 0',
+        }}/>
+      )}
+    </div>
+  );
+}
+
+// ─── FloatingPanelManager: hangi paneller açık ───────────────────────────────
+// panels: [{id, title, icon, content, accent, defaultPos, defaultSize}]
+function usePanels() {
+  const [panels, setPanels] = useState([]);
+  const openPanel = useCallback((panel) => {
+    setPanels(prev => {
+      if (prev.find(p=>p.id===panel.id)) return prev; // zaten açık
+      // Kademeli offset
+      const offset = prev.length * 30;
+      return [...prev, {
+        ...panel,
+        defaultPos: { x:(panel.defaultPos?.x??200)+offset, y:(panel.defaultPos?.y??100)+offset }
+      }];
+    });
+  }, []);
+  const closePanel = useCallback((id) => {
+    setPanels(prev => prev.filter(p=>p.id!==id));
+  }, []);
+  return { panels, openPanel, closePanel };
+}
+
 // ── useTheme hook: tema değişince tüm uygulamayı yeniden render et ────────────
 function useTheme() {
   const [theme, setThemeState] = React.useState(_theme);
@@ -379,10 +527,11 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
     const cv=canvasRef.current, off=offRef.current;
     if (!cv||!off) return;
     const {zoom,panX,panY}=stRef.current;
+    const dpr=window.devicePixelRatio||1;
     const W=cv.width, H=cv.height;
     const ctx=cv.getContext('2d');
     ctx.clearRect(0,0,W,H);
-    ctx.fillStyle='#EFF6FF'; ctx.fillRect(0,0,W,H);
+    ctx.fillStyle=C.bg; ctx.fillRect(0,0,W,H);
     const side=off.width*zoom;
     const x0=(W-side)/2+panX, y0=(H-side)/2+panY;
     ctx.imageSmoothingEnabled=zoom<3;
@@ -431,7 +580,10 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
     ctx.putImageData(img,0,0);
     offRef.current=off;
     const cv=canvasRef.current;
-    const sc=cv?Math.min(cv.width,cv.height)/n:1;
+    const dpr=window.devicePixelRatio||1;
+    // Canvas boyutu DPR ile büyütülmüş, zoom hesabında bunu dikkate al
+    const displaySize=cv?Math.min(cv.width,cv.height):n*dpr;
+    const sc=displaySize/n*0.9;
     stRef.current={zoom:sc,panX:0,panY:0,drag:false,lx:0,ly:0};
     render();
   },[modelData,axis,idx,colorRange,render]);
@@ -439,8 +591,20 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
   useEffect(() => {
     const el=containerRef.current, cv=canvasRef.current;
     if (!el||!cv) return;
-    const ro=new ResizeObserver(()=>{cv.width=el.clientWidth;cv.height=el.clientHeight;render();});
+    const ro=new ResizeObserver(()=>{
+      const dpr=window.devicePixelRatio||1;
+      cv.width=Math.floor(el.clientWidth*dpr);
+      cv.height=Math.floor(el.clientHeight*dpr);
+      cv.style.width=el.clientWidth+'px';
+      cv.style.height=el.clientHeight+'px';
+      render();
+    });
     ro.observe(el);
+    // İlk boyutu hemen set et
+    const dpr=window.devicePixelRatio||1;
+    cv.width=Math.floor(el.clientWidth*dpr);
+    cv.height=Math.floor(el.clientHeight*dpr);
+    render();
     return ()=>ro.disconnect();
   },[render]);
 
@@ -481,7 +645,7 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
 
   return (
     <div ref={containerRef} style={{ width:'100%',height:'100%',position:'relative',
-                                     overflow:'hidden',cursor:'crosshair',background:'#EFF6FF' }}
+                                     overflow:'hidden',cursor:'crosshair',background:C.bg }}
       onWheel={onWheel} onMouseDown={onDown} onMouseMove={onMove}
       onMouseUp={onUp} onMouseLeave={onUp} onDoubleClick={onDbl}>
       <canvas ref={canvasRef} style={{display:'block',width:'100%',height:'100%'}}/>
@@ -503,18 +667,139 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
 }
 
 // ─── REE Anomali haritası (2D canvas) ─────────────────────────────────────────
+// ─── LeafletAnomalyMap: OSM tabanlı jeofizik anomali haritası ────────────────
+function LeafletAnomalyMap({ modelData, colorRange, center=[39.92, 31.67] }) {
+  const mapRef    = useRef(null);
+  const mapObjRef = useRef(null);
+  const layerRef  = useRef(null);
+  const initedRef = useRef(false);
+
+  useEffect(() => {
+    if (initedRef.current || !mapRef.current) return;
+    initedRef.current = true;
+
+    const loadAndInit = async () => {
+      if (!document.getElementById('leaflet-css')) {
+        const link = document.createElement('link');
+        link.id = 'leaflet-css';
+        link.rel = 'stylesheet';
+        link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+        document.head.appendChild(link);
+      }
+      if (!window.L) {
+        await new Promise((res, rej) => {
+          const s = document.createElement('script');
+          s.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+          s.onload = res; s.onerror = rej;
+          document.head.appendChild(s);
+        });
+      }
+      if (mapObjRef.current) return;
+      const L = window.L;
+      const map = L.map(mapRef.current, { center, zoom: 14, zoomControl: true });
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© <a href="https://openstreetmap.org">OSM</a>',
+        maxZoom: 18, opacity: 0.65,
+      }).addTo(map);
+
+      // Çalışma alanı sınırı (480m × 480m)
+      const h = (480/111320)/2;
+      const bounds = [[center[0]-h, center[1]-h],[center[0]+h, center[1]+h]];
+      L.rectangle(bounds, { color:'#E8A020', weight:1.5, fillOpacity:0, dashArray:'5,4' })
+        .addTo(map).bindPopup('GeoPINN · 480×480m çalışma alanı');
+      L.marker(center, {
+        icon: L.divIcon({
+          className:'', iconSize:[10,10], iconAnchor:[5,5],
+          html:'<div style="width:10px;height:10px;background:#E8A020;border-radius:50%;border:2px solid #fff;box-shadow:0 0 4px rgba(0,0,0,0.6)"></div>'
+        })
+      }).addTo(map).bindPopup("<b>Beylikova REE Yatağı</b><br>39°55N 31°40E");
+      mapObjRef.current = map;
+    };
+    loadAndInit().catch(console.error);
+    return () => { if (mapObjRef.current) { mapObjRef.current.remove(); mapObjRef.current=null; initedRef.current=false; } };
+  }, []);
+
+  useEffect(() => {
+    const map = mapObjRef.current;
+    if (!map || !modelData?.length) return;
+    if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current=null; }
+
+    const n = modelData.length;
+    const vmin = colorRange?.min??0, vmax = colorRange?.max??1;
+    const cv = document.createElement('canvas'); cv.width=n; cv.height=n;
+    const ctx = cv.getContext('2d');
+    const img = ctx.createImageData(n,n);
+
+    for (let row=0;row<n;row++) for (let col=0;col<n;col++) {
+      let maxV=0;
+      for (let z=0;z<n;z++) maxV=Math.max(maxV, modelData[col]?.[n-1-row]?.[z]??0);
+      const t=Math.max(0,Math.min(1,(maxV-vmin)/(vmax-vmin+1e-9)));
+      let r,g,b,a;
+      if (t<0.05) {r=0;g=0;b=0;a=0;}
+      else if (t<0.33) {const s=t/0.33; r=0;g=Math.round(s*180);b=Math.round(220-s*220);a=160;}
+      else if (t<0.66) {const s=(t-0.33)/0.33; r=Math.round(s*255);g=180;b=0;a=190;}
+      else {const s=(t-0.66)/0.34; r=255;g=Math.round(180-s*180);b=0;a=210;}
+      const px=(row*n+col)*4;
+      img.data[px]=r;img.data[px+1]=g;img.data[px+2]=b;img.data[px+3]=a;
+    }
+    ctx.putImageData(img,0,0);
+
+    const h=(480/111320)/2;
+    const bounds=[[center[0]-h,center[1]-h],[center[0]+h,center[1]+h]];
+    const L=window.L;
+    if (!L) return;
+    const overlay=L.imageOverlay(cv.toDataURL(),bounds,{opacity:0.8,interactive:true});
+    overlay.addTo(map);
+    overlay.bindPopup(`<b>Cevher Anomalisi</b><br>Grid: ${n}³ · Maks: ${vmax.toFixed(4)}`);
+    layerRef.current=overlay;
+    map.fitBounds(bounds,{padding:[30,30]});
+  }, [modelData, colorRange]);
+
+  return (
+    <div style={{position:'relative',width:'100%',height:'100%',minHeight:400}}>
+      <div ref={mapRef} style={{width:'100%',height:'100%',minHeight:400}}/>
+      {!modelData?.length&&(
+        <div style={{position:'absolute',inset:0,display:'flex',flexDirection:'column',
+          alignItems:'center',justifyContent:'center',pointerEvents:'none',
+          background:'rgba(10,12,15,0.6)',gap:8}}>
+          <Map size={36} color="#E8A020" style={{opacity:0.4}}/>
+          <span style={{fontSize:11,color:'rgba(255,255,255,0.45)'}}>
+            Analiz çalıştırın — harita otomatik güncellenir
+          </span>
+        </div>
+      )}
+      {modelData?.length>0&&(
+        <div style={{position:'absolute',bottom:28,right:8,zIndex:1000,
+          background:'rgba(10,12,15,0.88)',borderRadius:4,padding:'5px 8px',
+          border:'1px solid rgba(232,160,32,0.25)'}}>
+          <div style={{fontSize:9,color:'rgba(255,255,255,0.5)',marginBottom:3,
+            textTransform:'uppercase',letterSpacing:'0.06em'}}>Anomali</div>
+          <div style={{display:'flex',alignItems:'center',gap:4}}>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{colorRange?.min?.toFixed(2)}</span>
+            <div style={{width:56,height:7,borderRadius:2,
+              background:'linear-gradient(to right,#0000dc,#00b400,#e8e800,#ff0000)'}}/>
+            <span style={{fontSize:9,color:'rgba(255,255,255,0.4)'}}>{colorRange?.max?.toFixed(2)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AnomalyMap({ modelData, colorRange }) {
+  const containerRef=useRef();
   const canvasRef=useRef();
+  const offRef=useRef(null);
+
+  // Model → offscreen buffer (n×n piksel, ham veri)
   useEffect(() => {
     if (!modelData?.length) return;
     const n=modelData.length;
-    const cv=canvasRef.current;
-    if (!cv) return;
-    cv.width=n; cv.height=n;
-    const ctx=cv.getContext('2d');
-    const img=ctx.createImageData(n,n);
     const vmin=colorRange?.min??0, vmax=colorRange?.max??1;
-    // Z ekseni boyunca maksimum değer projeksiyon (max intensity projection)
+    const off=document.createElement('canvas');
+    off.width=n; off.height=n;
+    const ctx=off.getContext('2d');
+    const img=ctx.createImageData(n,n);
     for (let row=0;row<n;row++) {
       for (let col=0;col<n;col++) {
         let maxV=0;
@@ -522,24 +807,69 @@ function AnomalyMap({ modelData, colorRange }) {
         const t=Math.max(0,Math.min(1,(maxV-vmin)/(vmax-vmin+1e-9)));
         const [r,g,b]=scalarToColor(t).map(c=>Math.round(c*255));
         const px=(row*n+col)*4;
-        img.data[px]=r;img.data[px+1]=g;img.data[px+2]=b;img.data[px+3]=255;
+        img.data[px]=r; img.data[px+1]=g; img.data[px+2]=b; img.data[px+3]=255;
       }
     }
     ctx.putImageData(img,0,0);
+    offRef.current=off;
+    drawMap();
   },[modelData,colorRange]);
 
+  const drawMap = useCallback(() => {
+    const cv=canvasRef.current, off=offRef.current, el=containerRef.current;
+    if (!cv||!off||!el) return;
+    const dpr=window.devicePixelRatio||1;
+    // Kare alan: container'ın kısa kenarının %85'i
+    const size=Math.floor(Math.min(el.clientWidth, el.clientHeight)*0.85);
+    cv.width=size*dpr; cv.height=size*dpr;
+    cv.style.width=size+'px'; cv.style.height=size+'px';
+    const ctx=cv.getContext('2d');
+    ctx.scale(dpr,dpr);
+    // imageSmoothingEnabled=false → keskin piksel, =true → smooth (yüksek DPI'da güzel)
+    ctx.imageSmoothingEnabled = off.width < 64;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off,0,0,size,size);
+    // Eksen etiketleri
+    ctx.fillStyle='rgba(100,120,140,0.8)';
+    ctx.font=`${Math.round(size*0.025)}px monospace`;
+    ctx.textAlign='center';
+    ctx.fillText('← Batı · X · Doğu →', size/2, size-4);
+    ctx.save(); ctx.translate(10, size/2); ctx.rotate(-Math.PI/2);
+    ctx.fillText('← Güney · Y · Kuzey →', 0, 0);
+    ctx.restore();
+    // Grid çizgileri
+    const step=size/4;
+    ctx.strokeStyle='rgba(255,255,255,0.15)'; ctx.lineWidth=0.5;
+    for (let i=1;i<4;i++) {
+      ctx.beginPath(); ctx.moveTo(i*step,0); ctx.lineTo(i*step,size); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(0,i*step); ctx.lineTo(size,i*step); ctx.stroke();
+    }
+  },[]);
+
+  useEffect(()=>{
+    const el=containerRef.current;
+    if (!el) return;
+    const ro=new ResizeObserver(()=>drawMap());
+    ro.observe(el);
+    return ()=>ro.disconnect();
+  },[drawMap]);
+
   return (
-    <div style={{position:'relative',width:'100%',height:'100%',background:'#EFF6FF',
-                 display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:16}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:8,
-                   textTransform:'uppercase',letterSpacing:'0.06em'}}>
-        REE Anomali Haritası — Max Intensity Projeksiyon (Z)
+    <div ref={containerRef} style={{position:'relative',width:'100%',height:'100%',
+      background: C.bg, display:'flex',flexDirection:'column',
+      alignItems:'center',justifyContent:'center',gap:8}}>
+      <div style={{fontSize:10,fontWeight:700,color:C.textMid,
+        textTransform:'uppercase',letterSpacing:'0.08em'}}>
+        Anomali Haritası — Max Projeksiyon (Z)
       </div>
-      <canvas ref={canvasRef} style={{imageRendering:'pixelated',maxWidth:'85%',maxHeight:'75%',
-                                      aspectRatio:'1',border:`2px solid ${C.border}`,borderRadius:4,
-                                      boxShadow:'0 2px 12px rgba(0,0,0,0.1)'}}/>
-      <div style={{marginTop:8,fontSize:9,color:C.textMid,fontFamily:'monospace'}}>
-        Enlem (Y) · Boylam (X) — 480m × 480m domain
+      <canvas ref={canvasRef}
+        style={{border:`1.5px solid ${C.border}`,borderRadius:4,
+          boxShadow:'0 4px 20px rgba(0,0,0,0.3)'}}/>
+      {!modelData?.length && (
+        <div style={{color:C.textLow,fontSize:12}}>Önce analiz çalıştırın</div>
+      )}
+      <div style={{fontSize:9,color:C.textLow,fontFamily:'monospace'}}>
+        480m × 480m · Grid: {modelData?.length??'—'}³
       </div>
       <ColorBar vmin={colorRange?.min??0} vmax={colorRange?.max??1} label="Maks. Cevher" />
     </div>
@@ -958,8 +1288,114 @@ async function apiFetch(url, options = {}) {
 const _isElectron = typeof window !== 'undefined' && !!window.electronAPI;
 let API_BASE = 'http://127.0.0.1:8000';   // varsayılan, useEffect'te güncellenir
 
+// ─── Panel penceresi modu ─────────────────────────────────────────────────────
+function PanelWindowApp() {
+  const [theme] = useTheme();
+  const panelId = window.electronAPI?.getPanelId?.()
+    || new URLSearchParams(window.location.search).get('panel')
+    || (window.location.hash.startsWith('#panel=') ? window.location.hash.slice(7) : null);
+
+  // localStorage'dan model verisini oku — ana pencere her analizde günceller
+  const [modelData, setModelData] = React.useState(null);
+  const [colorRange, setColorRange] = React.useState({min:0,max:1});
+  const [sliceAxis, setSliceAxis] = React.useState('z');
+  const [sliceIdx, setSliceIdx] = React.useState(8);
+
+  React.useEffect(() => {
+    const load = () => {
+      try {
+        const raw = localStorage.getItem('geopinn_model_data');
+        const cr  = localStorage.getItem('geopinn_color_range');
+        if (raw) setModelData(JSON.parse(raw));
+        if (cr)  setColorRange(JSON.parse(cr));
+      } catch(e) {}
+    };
+    load();
+    // Ana pencere veri güncellediğinde storage event gelir
+    window.addEventListener('storage', load);
+    return () => window.removeEventListener('storage', load);
+  }, []);
+
+  const contentMap = {
+    'slice-float':  <div style={{width:'100vw',height:'calc(100vh - 32px)',background:C.bg,
+                      display:'flex',flexDirection:'column'}}>
+                      <div style={{display:'flex',gap:4,padding:'6px 8px',
+                        borderBottom:`1px solid ${C.border}`,flexShrink:0}}>
+                        {['x','y','z'].map(ax=>(
+                          <button key={ax} onClick={()=>setSliceAxis(ax)}
+                            style={{padding:'3px 10px',borderRadius:3,border:'none',
+                              cursor:'pointer',fontSize:11,fontWeight:700,
+                              background:sliceAxis===ax?C.teal:'transparent',
+                              color:sliceAxis===ax?'#fff':C.textMid}}>
+                            {ax.toUpperCase()}
+                          </button>
+                        ))}
+                        <input type="range" min={0} max={modelData?.length??31}
+                          value={sliceIdx} onChange={e=>setSliceIdx(parseInt(e.target.value))}
+                          style={{flex:1,accentColor:C.teal}}/>
+                        <span style={{fontSize:10,fontFamily:'monospace',color:C.teal,minWidth:24}}>
+                          {sliceIdx}
+                        </span>
+                      </div>
+                      <div style={{flex:1}}>
+                        <SliceView modelData={modelData} axis={sliceAxis} idx={sliceIdx}
+                          colorRange={colorRange} sweeping={false}/>
+                      </div>
+                    </div>,
+    'map-float':    <div style={{width:'100vw',height:'calc(100vh - 32px)',background:C.bg}}>
+                      <LeafletAnomalyMap modelData={modelData} colorRange={colorRange}/>
+                    </div>,
+    'stats-float':  <div style={{width:'100vw',height:'calc(100vh - 32px)',background:C.bg,
+                      overflowY:'auto'}}>
+                      <StatsPanel modelData={modelData} colorRange={colorRange}
+                        jiHistory={null} jiCorrelation={null} jiSummary={null}/>
+                    </div>,
+  };
+
+  if (panelId && contentMap[panelId]) {
+    return (
+      <div style={{background:C.bg,color:C.text,fontFamily:'"Inter","Segoe UI",sans-serif',
+        width:'100vw',height:'100vh',overflow:'hidden',display:'flex',flexDirection:'column'}}>
+        {/* Mini başlık */}
+        <div style={{height:32,background:'#0D1018',borderBottom:`1px solid ${C.accent}`,
+          display:'flex',alignItems:'center',padding:'0 10px',gap:8,
+          WebkitAppRegion:'drag',userSelect:'none',flexShrink:0}}>
+          <span style={{fontSize:10,fontWeight:700,color:C.accent,letterSpacing:'0.06em'}}>
+            GEOPINN
+          </span>
+          <span style={{fontSize:10,color:C.textMid,flex:1}}>
+            {panelId.replace('-float','').toUpperCase()}
+          </span>
+          <div style={{WebkitAppRegion:'no-drag',display:'flex',gap:2}}>
+            <button onClick={()=>window.electronAPI?.minimize?.()}
+              style={{width:20,height:20,border:'none',background:'transparent',
+                color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:14}}>─</button>
+            <button onClick={()=>window.electronAPI?.close?.()}
+              style={{width:20,height:20,border:'none',background:'transparent',
+                color:'rgba(255,255,255,0.4)',cursor:'pointer',fontSize:13}}
+              onMouseEnter={e=>{e.target.style.background='#C42B1C';e.target.style.color='#fff';}}
+              onMouseLeave={e=>{e.target.style.background='transparent';e.target.style.color='rgba(255,255,255,0.4)';}}>
+              ✕</button>
+          </div>
+        </div>
+        <div style={{flex:1,overflow:'hidden'}}>{contentMap[panelId]}</div>
+      </div>
+    );
+  }
+  return null; // Ana App render eder
+}
+
 export default function App() {
+  // Panel penceresi modunda PanelWindowApp göster
+  const panelId = typeof window !== 'undefined'
+    && (window.electronAPI?.getPanelId?.()
+       || new URLSearchParams(window.location.search).get('panel')
+       || (window.location.hash?.startsWith?.('#panel=')
+           ? window.location.hash.slice(7) : null));
+  if (panelId) return <PanelWindowApp/>;
+
   const [theme, toggleTheme] = useTheme();
+  const { panels, openPanel, closePanel } = usePanels();
   // Veri
   const [modelData, setModelData]=useState(null);
   const [filteredData, setFilteredData]=useState(null);
@@ -976,7 +1412,7 @@ export default function App() {
   // Radyometri & ısı akışı
   const [radResult, setRadResult]=useState(null);
   const [radRunning, setRadRunning]=useState(false);
-  const [radAvailable, setRadAvailable]=useState(false);
+  const [radAvailable, setRadAvailable]=useState(null);
   const [radParams, setRadParams]=useState({
     u_bg:3.0, u_ore:15.0, th_bg:12.0, th_ore:60.0,
     k_bg:2.5, k_ore:4.5, k_thermal:2.5,
@@ -1000,6 +1436,7 @@ export default function App() {
 
   // Backend bağlantı yönetimi
   const [apiBase, setApiBase]           = useState('http://127.0.0.1:8000');
+  const [backendOk, setBackendOk]       = useState(false); // gerçek bağlantı var mı
   const [backendMode, setBackendMode]   = useState('local');  // 'local' | 'colab'
   const [colabUrl, setColabUrl]         = useState('');
   const [showSettings, setShowSettings] = useState(false);
@@ -1190,12 +1627,32 @@ export default function App() {
 
   // Backend
   useEffect(()=>{
+    setBackendOk(false);
+    setSimpegAvailable(null);
+    setFvmAvailable(null);
+    setRadAvailable(null);
     apiFetch(`${apiBase}/api/health`).then(r=>r.json())
-      .then(d=>log('ok',`Backend v${d.version} bağlandı.`))
+      .then(d=>{
+        log('ok',`Backend v${d.version} bağlandı.`);
+        setBackendOk(true);
+      })
       .catch(()=>log('err','Backend bağlantısı kurulamadı.'));
     fetchDatasets();
     fetchAnalyses();
   }, [apiBase]);
+
+  // Modül status'larını SADECE backend bağlandıktan sonra kontrol et
+  useEffect(()=>{
+    if (!backendOk) return;
+    apiFetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
+      .then(d=>setSimpegAvailable(d.available??false)).catch(()=>setSimpegAvailable(false));
+    apiFetch(`${apiBase}/api/fvm/status`).then(r=>r.json())
+      .then(d=>setFvmAvailable(d.available??false)).catch(()=>setFvmAvailable(false));
+    apiFetch(`${apiBase}/api/radiometry/status`).then(r=>r.json())
+      .then(d=>setRadAvailable(d.available??false)).catch(()=>setRadAvailable(false));
+    apiFetch(`${apiBase}/api/data/formats`).then(r=>r.json())
+      .then(d=>setDataFormats(d.formats||{})).catch(()=>{});
+  }, [backendOk, apiBase]);
 
   const fetchDatasets=async()=>{
     try{const d=await(await apiFetch(`${apiBase}/api/data/list`)).json();setDatasets(d.files||[]);}
@@ -1221,18 +1678,22 @@ export default function App() {
   };
   const updateModel = (data) => {
     if (!data || !data.length) return;
-    // Derin iç içe array'i düzleştir ve yeniden şekillendir
-    // Bu stack overflow'u önler
     try {
       setModelData(data);
       setFilteredData(null);
-      // Flat array üzerinde çalış
       const flat = Array.isArray(data[0][0])
         ? data.flat(2)
         : data.flat ? data.flat(Infinity) : [];
       if (flat.length > 0) {
-        setColorRange({ min: Math.min(...flat), max: Math.max(...flat) });
+        const vmin = Math.min(...flat), vmax = Math.max(...flat);
+        setColorRange({ min: vmin, max: vmax });
         setMetrics(calcMetrics(data));
+        // Floating pencerelerle paylaş — localStorage
+        try {
+          localStorage.setItem('geopinn_model_data', JSON.stringify(data));
+          localStorage.setItem('geopinn_color_range', JSON.stringify({min:vmin, max:vmax}));
+          localStorage.setItem('geopinn_model_ts', Date.now().toString());
+        } catch(e) { /* localStorage dolu olabilir — büyük modeller için sessizce geç */ }
       }
     } catch(e) {
       console.error('updateModel hatası:', e);
@@ -1257,13 +1718,7 @@ export default function App() {
     finally{setLoading(false);}
   };
 
-  // FVM + Radyometri status kontrolü
-  useEffect(()=>{
-    apiFetch(`${apiBase}/api/radiometry/status`).then(r=>r.json())
-      .then(d=>setRadAvailable(d.available||false)).catch(()=>{});
-    apiFetch(`${apiBase}/api/data/formats`).then(r=>r.json())
-      .then(d=>setDataFormats(d.formats||{})).catch(()=>{});
-  },[apiBase]);
+  // FVM+Rad status: backendOk useEffect'e taşındı
 
   const runRadiometry=async()=>{
     setRadRunning(true); log('info','Radyometri & ısı akışı hesaplanıyor...');
@@ -1337,11 +1792,7 @@ export default function App() {
   const [simpegAlphaX, setSimpegAlphaX]=useState(0);   // log10
   const [simpegAvailable, setSimpegAvailable]=useState(null);
 
-  useEffect(()=>{
-    apiFetch(`${apiBase}/api/simpeg/status`).then(r=>r.json())
-      .then(d=>setSimpegAvailable(d.available))
-      .catch(()=>setSimpegAvailable(null));  // null = bilinmiyor (false = kesin yok)
-  },[apiBase]);
+  // SimPEG status: backendOk useEffect'e taşındı
 
   const runSimPEG = async () => {
     setSimpegRunning(true);
@@ -1473,9 +1924,6 @@ export default function App() {
 
   const viewTabs=[
     {id:'3d',label:'3D',icon:Box},
-    {id:'slice',label:'Kesit',icon:Layers},
-    {id:'anomaly',label:'Harita',icon:Map},
-    {id:'stats',label:'İstatistik',icon:BarChart2},
   ];
 
   const rightTabs=[
@@ -1501,24 +1949,39 @@ export default function App() {
       <header style={{ height:42, background: theme==='dark' ? '#0D1018' : '#0D1117',
                        borderBottom:`1.5px solid ${C.accent}`,
                        display:'flex', alignItems:'center', padding:'0 14px', gap:12,
-                       flexShrink:0, userSelect:'none' }}>
-        {/* Logo */}
-        <div style={{ display:'flex', alignItems:'center', gap:0, flexShrink:0 }}>
-          {/* İmza element: sismik profil || çizgileri */}
-          <div style={{ display:'flex', alignItems:'center', gap:2, marginRight:10 }}>
-            {[6,10,14,10,6].map((h,i)=>(
-              <div key={i} style={{ width:2, height:h, background:C.accent,
-                borderRadius:1, opacity: i===2?1:0.5+i*0.05 }}/>
-            ))}
-          </div>
-          <div>
-            <span style={{ fontSize:13, fontWeight:800, color:'#fff',
-              letterSpacing:'0.06em', fontFamily:'"Inter","Segoe UI",sans-serif' }}>GEO</span>
-            <span style={{ fontSize:13, fontWeight:800, color:C.accent,
-              letterSpacing:'0.06em' }}>PINN</span>
-            <span style={{ fontSize:8, color:'rgba(255,255,255,0.35)',
-              letterSpacing:'0.15em', textTransform:'uppercase',
-              marginLeft:8, fontWeight:400 }}>STUDIO 3.0</span>
+                       flexShrink:0, userSelect:'none',
+                       WebkitAppRegion: window.electronAPI ? 'drag' : 'none' }}>
+        {/* Logo — prizma katman */}
+        <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none"
+            xmlns="http://www.w3.org/2000/svg" style={{flexShrink:0}}>
+            {/* Üst üçgen yüzey */}
+            <polygon points="14,2 24,10 4,10" fill="#E8A020"/>
+            {/* Orta katman */}
+            <polygon points="4,10 24,10 22,18 6,18" fill="#E8A020" opacity="0.55"/>
+            {/* Alt katman */}
+            <polygon points="6,18 22,18 20,26 8,26" fill="#E8A020" opacity="0.25"/>
+            {/* Sol kenar çizgisi */}
+            <line x1="14" y1="2" x2="8" y2="26" stroke="#E8A020" strokeWidth="0.5" opacity="0.4"/>
+            {/* GP harfi üst yüzeyde */}
+            <text x="14" y="8.5" textAnchor="middle"
+              fontFamily="'Inter','Segoe UI',sans-serif"
+              fontWeight="900" fontSize="6" fill="#0A0C0F" letterSpacing="0.5">GP</text>
+            {/* Yatay derinlik çizgileri */}
+            <line x1="5" y1="14" x2="23" y2="14" stroke="#E8A020" strokeWidth="0.4"
+              strokeDasharray="2,2" opacity="0.6"/>
+            <line x1="7" y1="21" x2="21" y2="21" stroke="#E8A020" strokeWidth="0.4"
+              strokeDasharray="2,2" opacity="0.4"/>
+          </svg>
+          <div style={{lineHeight:1}}>
+            <div style={{ fontSize:13, fontWeight:800, color:'#fff',
+              letterSpacing:'0.08em', fontFamily:'"Inter","Segoe UI",sans-serif' }}>
+              <span>GEO</span><span style={{color:C.accent}}>PINN</span>
+            </div>
+            <div style={{ fontSize:8, color:'rgba(255,255,255,0.3)',
+              letterSpacing:'0.18em', textTransform:'uppercase', marginTop:1 }}>
+              STUDIO 3.0
+            </div>
           </div>
         </div>
 
@@ -1528,7 +1991,7 @@ export default function App() {
         {/* Görünüm sekmeleri */}
         <div style={{ display:'flex', gap:1 }}>
           {viewTabs.map(({id,label,icon:Icon})=>(
-            <button key={id} onClick={()=>setViewMode(id)}
+            <button key={id} onClick={()=>handleViewTab(id)}
               style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 11px',
                        border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
                        background: viewMode===id ? C.accent : 'transparent',
@@ -1561,6 +2024,29 @@ export default function App() {
                            background: backendMode==='colab' ? '#34D399' : 'rgba(255,255,255,0.3)' }}/>
             {backendMode==='colab' ? 'Colab GPU' : 'Yerel'}
           </span>
+          {/* Sağ butonlar — drag yok */}
+          <div style={{ display:'flex', gap:6, alignItems:'center', WebkitAppRegion:'no-drag', marginLeft:'auto' }}>
+
+          {/* Hızlı panel açıcılar */}
+          {window.electronAPI && [
+            {id:'slice-float',  label:'KST', w:700, h:560},
+            {id:'stats-float',  label:'İST', w:760, h:560},
+            {id:'map-float',    label:'HRT', w:560, h:580},
+          ].map(({id,label,w,h})=>(
+            <button key={id} onClick={()=>window.electronAPI.openPanelWindow({
+              panelId:id,
+              x:Math.round(window.screenX+120),
+              y:Math.round(window.screenY+90),
+              w, h,
+            })}
+              style={{ padding:'3px 8px', borderRadius:3, border:`1px solid ${C.border}`,
+                background:'rgba(255,255,255,0.06)', color:'rgba(255,255,255,0.5)',
+                fontSize:9, fontWeight:700, letterSpacing:'0.06em',
+                cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+              {label}
+            </button>
+          ))}
+
           {/* Tema toggle */}
           <button onClick={()=>toggleTheme()}
             title={theme==='dark'?'Aydınlık moda geç':'Karanlık moda geç'}
@@ -1584,6 +2070,38 @@ export default function App() {
                      display:'flex', alignItems:'center', gap:4 }}>
             <Info size={11}/> REHBER
           </button>
+
+          {/* Pencere kontrol butonları — no-drag div içinde */}
+          {window.electronAPI && (
+            <div style={{ display:'flex', gap:0, marginLeft:4, flexShrink:0,
+              WebkitAppRegion:'no-drag' }}>
+              <button onClick={()=>window.electronAPI.minimize()}
+                style={{ width:46, height:42, border:'none', cursor:'pointer',
+                  background:'transparent', color:'rgba(255,255,255,0.45)',
+                  fontSize:14, display:'flex', alignItems:'center', justifyContent:'center' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.08)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                ─
+              </button>
+              <button onClick={()=>window.electronAPI.maximize()}
+                style={{ width:46, height:42, border:'none', cursor:'pointer',
+                  background:'transparent', color:'rgba(255,255,255,0.45)',
+                  fontSize:11, display:'flex', alignItems:'center', justifyContent:'center' }}
+                onMouseEnter={e=>e.currentTarget.style.background='rgba(255,255,255,0.08)'}
+                onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                ▢
+              </button>
+              <button onClick={()=>window.electronAPI.close()}
+                style={{ width:46, height:42, border:'none', cursor:'pointer',
+                  background:'transparent', color:'rgba(255,255,255,0.45)',
+                  fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}
+                onMouseEnter={e=>{ e.currentTarget.style.background='#C42B1C'; e.currentTarget.style.color='#fff'; }}
+                onMouseLeave={e=>{ e.currentTarget.style.background='transparent'; e.currentTarget.style.color='rgba(255,255,255,0.45)'; }}>
+                ✕
+              </button>
+            </div>
+          )}
+          </div>{/* /sağ butonlar */}
         </div>
       </header>
 
@@ -1659,6 +2177,8 @@ export default function App() {
           </div>
         </div>
       )}
+      {/* Floating paneller — sadece Electron'da ayrı pencere açar */}
+
       {showHelp && (
         <div style={{ position:'fixed', inset:0, zIndex:1000, background:'rgba(0,0,0,0.6)',
                       display:'flex', alignItems:'center', justifyContent:'center' }}
@@ -2072,17 +2592,7 @@ export default function App() {
               )}
             </>
           )}
-          {viewMode==='slice' && (
-            <SliceView modelData={activeDisplay} axis={sliceAxis} idx={sliceIdx}
-              colorRange={colorRange} sweeping={sweeping}/>
-          )}
-          {viewMode==='anomaly' && (
-            <AnomalyMap modelData={activeDisplay} colorRange={colorRange}/>
-          )}
-          {viewMode==='stats' && (
-            <StatsPanel modelData={activeDisplay} colorRange={colorRange}
-              jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
-          )}
+          {/* Kesit/Harita/İstatistik floating panel olarak açılır */}
         </main>
 
         {/* ── Sağ Panel: dikey ikon rail + içerik ── */}
@@ -2183,52 +2693,109 @@ export default function App() {
                 </Btn>
 
                 {simpegResult && (
-                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:10}}>
-                    <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:8}}>Sonuç</div>
-                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:6,marginBottom:8}}>
-                      {[
-                        {l:'Yöntem', v:'Tikhonov L2', c:C.purple},
-                        {l:'Grid',   v:`${simpegResult.mesh_info?.nbc}³`, c:C.teal},
-                        simpegResult.results?.density_kgm3 && {l:'Δρ max', v:`${simpegResult.results.density_kgm3?.toFixed(0)} kg/m³`, c:C.accent},
-                        simpegResult.results?.susceptibility_max && {l:'χ max', v:simpegResult.results.susceptibility_max?.toExponential(2)+' SI', c:C.ok},
-                      ].filter(Boolean).map(({l,v,c})=>(
-                        <div key={l} style={{background:C.surface,border:`1px solid ${C.border}`,
-                                             borderRadius:5,padding:'6px 8px'}}>
-                          <div style={{fontSize:9,color:C.textLow}}>{l}</div>
-                          <div style={{fontSize:12,fontWeight:700,fontFamily:'monospace',color:c}}>{v}</div>
-                        </div>
-                      ))}
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+
+                    {/* Özet metrikler */}
+                    <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:6,
+                        textTransform:'uppercase',letterSpacing:'0.05em'}}>Özet</div>
+                      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:5}}>
+                        {[
+                          {l:'Yöntem',  v:'Tikhonov L2',  c:C.purple},
+                          {l:'Grid',    v:`${simpegResult.mesh_info?.nbc}³`, c:C.teal},
+                          {l:'Hücreler',v:`${simpegResult.mesh_info?.n_cells}`, c:C.textMid},
+                          {l:'Domain',  v:`${simpegResult.mesh_info?.domain_m}m`, c:C.textMid},
+                          simpegResult.results?.density_kgm3 && {l:'Δρ maks', v:`${simpegResult.results.density_kgm3?.toFixed(1)} kg/m³`, c:C.accent},
+                          simpegResult.results?.density_max && {l:'Δρ (g/cc)', v:simpegResult.results.density_max?.toFixed(4), c:C.accent},
+                          simpegResult.results?.susceptibility_max && {l:'χ maks', v:simpegResult.results.susceptibility_max?.toExponential(2)+' SI', c:C.ok},
+                        ].filter(Boolean).map(({l,v,c})=>(
+                          <div key={l} style={{background:C.panel,border:`1px solid ${C.border}`,
+                            borderRadius:4,padding:'5px 7px'}}>
+                            <div style={{fontSize:9,color:C.textLow,textTransform:'uppercase',letterSpacing:'0.04em'}}>{l}</div>
+                            <div style={{fontSize:11,fontWeight:700,fontFamily:'monospace',color:c}}>{v}</div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
 
-                    {/* Yakınsama */}
-                    {(simpegResult.history?.grav?.length>0 || simpegResult.history?.mag?.length>0) && (
-                      <div>
-                        <div style={{fontSize:10,fontWeight:600,color:C.header,marginBottom:4}}>
-                          Gauss-Newton yakınsaması
+                    {/* Gravite sonucu */}
+                    {simpegResult.results?.density_kgm3 && (
+                      <div style={{background:C.bg,border:`1px solid ${C.teal}30`,borderRadius:5,padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.teal,marginBottom:6,
+                          textTransform:'uppercase',letterSpacing:'0.05em'}}>Gravite — Yoğunluk</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                          {[
+                            ['Δρ maksimum', simpegResult.results.density_kgm3?.toFixed(1)+' kg/m³'],
+                            ['Δρ (g/cc)',   simpegResult.results.density_max?.toFixed(5)+' g/cc'],
+                          ].map(([k,v])=>(
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11}}>
+                              <span style={{color:C.textMid}}>{k}</span>
+                              <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                            </div>
+                          ))}
                         </div>
-                        <ResponsiveContainer width="100%" height={80}>
-                          <LineChart margin={{top:2,right:4,left:-24,bottom:0}}>
-                            <YAxis tick={{fontSize:8}}/>
-                            <Tooltip contentStyle={{fontSize:9}}/>
-                            {simpegResult.history?.grav?.length>0 && (
-                              <Line data={simpegResult.history.grav.map((v,i)=>({i,f:v}))}
-                                dataKey="f" dot={false} stroke={C.teal} strokeWidth={2} name="Grav φ"/>
-                            )}
-                            {simpegResult.history?.mag?.length>0 && (
-                              <Line data={simpegResult.history.mag.map((v,i)=>({i,f:v}))}
-                                dataKey="f" dot={false} stroke={C.accent} strokeWidth={2} name="Mag φ"/>
-                            )}
-                          </LineChart>
-                        </ResponsiveContainer>
-                        <div style={{fontSize:9,color:C.textLow,marginTop:2}}>
-                          φ = φ_d + β·φ_m (data misfit + regularization)
-                        </div>
+                        {simpegResult.history?.grav?.length>0 && (
+                          <>
+                            <div style={{fontSize:9,color:C.textLow,margin:'6px 0 3px',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                              Gauss-Newton φ(iter)
+                            </div>
+                            <ResponsiveContainer width="100%" height={70}>
+                              <LineChart data={simpegResult.history.grav.map((v,i)=>({i,f:v}))}
+                                margin={{top:2,right:4,left:-28,bottom:0}}>
+                                <YAxis tick={{fontSize:8}} tickFormatter={v=>v.toExponential(0)}/>
+                                <Tooltip contentStyle={{fontSize:9}} formatter={v=>[v.toExponential(3),'φ']}/>
+                                <Line dataKey="f" dot={false} stroke={C.teal} strokeWidth={2}/>
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </>
+                        )}
                       </div>
                     )}
 
-                    <div style={{marginTop:8,padding:'6px 8px',background:`${C.teal}08`,
-                                 borderRadius:5,fontSize:10,color:C.textMid}}>
-                      {simpegResult.method}
+                    {/* Manyetik sonucu */}
+                    {simpegResult.results?.susceptibility_max && (
+                      <div style={{background:C.bg,border:`1px solid ${C.accent}30`,borderRadius:5,padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.accent,marginBottom:6,
+                          textTransform:'uppercase',letterSpacing:'0.05em'}}>Manyetik — Süseptibilite</div>
+                        <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                          {[
+                            ['χ maksimum', simpegResult.results.susceptibility_max?.toExponential(3)+' SI'],
+                          ].map(([k,v])=>(
+                            <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11}}>
+                              <span style={{color:C.textMid}}>{k}</span>
+                              <span style={{fontFamily:'monospace',color:C.accent}}>{v}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {simpegResult.history?.mag?.length>0 && (
+                          <>
+                            <div style={{fontSize:9,color:C.textLow,margin:'6px 0 3px',textTransform:'uppercase',letterSpacing:'0.04em'}}>
+                              Gauss-Newton φ(iter)
+                            </div>
+                            <ResponsiveContainer width="100%" height={70}>
+                              <LineChart data={simpegResult.history.mag.map((v,i)=>({i,f:v}))}
+                                margin={{top:2,right:4,left:-28,bottom:0}}>
+                                <YAxis tick={{fontSize:8}} tickFormatter={v=>v.toExponential(0)}/>
+                                <Tooltip contentStyle={{fontSize:9}} formatter={v=>[v.toExponential(3),'φ']}/>
+                                <Line dataKey="f" dot={false} stroke={C.accent} strokeWidth={2}/>
+                              </LineChart>
+                            </ResponsiveContainer>
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Adam vs SimPEG karşılaştırma notu */}
+                    <div style={{background:`${C.purple}08`,border:`1px solid ${C.purple}20`,
+                      borderRadius:5,padding:'8px 10px',fontSize:10,color:C.textMid,lineHeight:1.6}}>
+                      <span style={{color:C.purple,fontWeight:700}}>SimPEG vs Adam:</span> SimPEG
+                      analitik sensitivite matrisi (J=∂d/∂m) kullanır — her iterasyonda
+                      tam Jacobian. Adam ise autograd ile yaklaşık gradyan kullanır.
+                      Sonuçlar farklı olabilir: SimPEG daha smooth, Adam daha hızlı yakınsar.
+                    </div>
+
+                    <div style={{fontSize:9,color:C.textLow,fontFamily:'monospace'}}>
+                      {simpegResult.method} · {simpegResult.dataset_used}
                     </div>
                   </div>
                 )}
@@ -2387,11 +2954,11 @@ export default function App() {
 
                 <Btn onClick={runRadiometry} icon={radRunning?Loader2:Waves}
                   variant='teal' size='sm' style={{width:'100%'}}
-                  disabled={radRunning||!radAvailable}>
-                  {radRunning?'Hesaplanıyor...':!radAvailable?'Modül yok':'Radyometri Hesapla'}
+                  disabled={radRunning||radAvailable===false}>
+                  {radRunning?'Hesaplanıyor...':radAvailable===null?'Kontrol ediliyor...':radAvailable===false?'Modül yok':'Radyometri Hesapla'}
                 </Btn>
 
-                {!radAvailable&&(
+                {radAvailable===false && apiBase!=='http://127.0.0.1:8000' && (
                   <div style={{fontSize:10,color:C.textMid,background:C.panel,
                     borderRadius:4,padding:'8px 10px',border:`1px solid ${C.border}`,lineHeight:1.6}}>
                     <div style={{fontWeight:700,color:C.warn,marginBottom:4}}>
@@ -2502,7 +3069,7 @@ export default function App() {
                 </div>
                 <Btn onClick={runFvmCompare} icon={fvmRunning?Loader2:GitCompare}
                   variant='teal' size='sm' style={{width:'100%'}} disabled={fvmRunning||fvmAvailable===false}>
-                  {fvmRunning?'Hesaplanıyor...':!fvmAvailable?'FVM modülü yok':'Karşılaştırmayı Başlat'}
+                  {fvmRunning?'Hesaplanıyor...':fvmAvailable===null?'Kontrol ediliyor...':fvmAvailable===false?'FVM modülü yok':'Karşılaştırmayı Başlat'}
                 </Btn>
                 {fvmAvailable===false && apiBase!=='http://127.0.0.1:8000' && (
                   <div style={{fontSize:10,color:C.textMid,background:C.bg,
