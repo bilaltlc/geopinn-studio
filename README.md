@@ -46,31 +46,33 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ## Screenshots
 
-### 3D Model — Beylikova Vein Geometry (32³ grid)
-![3D FVM](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fvm_3d.png)
-*Hydrotermal damar geometrisi — Gravite RMSE: 0.0126 mGal (FVM vs Prizma)*
+### Multi-window — Leaflet Harita + Kesit + Ana Pencere
+![Multi Window](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_multi_window2.png)
+*Ayrı pencereler: Leaflet OSM harita, Z kesit görünümü, ana 3D viewer — eş zamanlı*
 
-### Radiometry Panel — U/Th/K & Heat Flow
-![Radiometry](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_3d_radiometry.png)
-*Radyometri & radyojenik ısı akışı analizi — Y_beylikova_vein_64x64x64.npy*
+### Leaflet Anomali Haritası — OSM Üzerinde
+![Leaflet Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_map.png)
+*Beylikova REE alanı · OSM tile + ImageOverlay · mavi→yeşil→sarı→kırmızı skalası*
 
-### FVM vs Prism Comparison
-![FVM Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fvm_panel.png)
-*Gravite RMSE: 0.0126 mGal · Göreli: 5.29% · Prizma: 0.148s · FVM: 7.245s*
+### Kesit Görünümü (Z ekseni)
+![Slice Z](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_slice2.png)
+*Z=5 derinlik kesiti · viridis renk skalası · 16³ grid*
 
-### Cross-Section Views (X / Y / Z)
-![Slice X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_x.png)
-![Slice Y](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_y.png)
-![Slice Z](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_slice_z.png)
-*32³ grid üç eksen kesit — viridis renk skalası*
+### SimPEG Tikhonov Inversion Sonuçları
+![SimPEG Results](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_simpeg_results.png)
+*Δρ: 10.9 kg/m³ · χ: 7.09e-4 SI · Gravite + Manyetik split section*
 
-### Statistics — Joint Inversion Convergence
-![Statistics](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_statistics.png)
-*Misfit: 124.54 → 0.389 (150 iter) · Grav↔Mag: 0.507 · Mag↔CSAMT: -0.775*
+### Joint Inversion — Ters Çözüm
+![Joint Inversion](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_joint_inversion.png)
+*Misfit: 100.279 → 0.2405 · RMSE: 0.0636 · 16³ grid · 150 iter*
 
-### Data Panel — Format Selector
-![Data Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_data_panel.png)
-*Veri formatı otomatik tespit — Y/X/CSAMT dataset yönetimi*
+### Belirsizlik Analizi (UQ)
+![UQ Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_uq_panel.png)
+*5 realizasyon · %3 gürültü · Yüksek güven: %100 · RMSE: 0.0643*
+
+### Radyometri & Isı Akışı
+![Radiometry](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_3d_radiometry2.png)
+*U/Th/K → Th/U: 4.00 · TC: 56.8 cps · Ort. ısı akışı: -140629 mW/m²*
 
 ---
 

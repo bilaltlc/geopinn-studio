@@ -1,3 +1,47 @@
+## [v3.0.0.2] — 2026-08-06
+
+### Yeni Özellikler
+
+**Leaflet.js Anomali Haritası**
+- OSM tile layer üzerine model anomalisi `ImageOverlay` olarak yükleniyor
+- Gerçek koordinat sistemi — Beylikova (39.92°N, 31.67°E), 480×480m alan
+- Çalışma alanı sınırı turuncu kesik çizgi, merkez marker
+- Mavi→yeşil→sarı→kırmızı jeofizik renk skalası
+- Dinamik CDN yükleme — `package.json` değişikliği gerekmez
+
+**Ayrı Pencere Sistemi (Electron)**
+- KST/İST/HRT butonlarından gerçek `BrowserWindow` açılıyor
+- Uygulama sınırları dışına çıkabiliyor, monitörler arası taşınabiliyor
+- `localStorage` paylaşımı — analiz verisi otomatik floating panele yansıyor
+- Panel penceresi kapanınca ana uygulama etkilenmiyor
+
+**Custom Titlebar & Logo**
+- `frame: false` — native Windows başlık çubuğu kaldırıldı
+- Prizma katman logo (C konsepti) — GP monogram, turuncu katmanlar, derinlik çizgileri
+- Özel ─ ▢ ✕ butonları (`WebkitAppRegion: no-drag`)
+- `Menu.setApplicationMenu(null)` — boş File/Edit/View menü barı kaldırıldı
+
+**Backend CUDA Otomatik Tespit**
+- `torch.cuda.is_available()` ile yerel NVIDIA GPU otomatik kullanılıyor
+- Colab bağlantısı opsiyonel — lokal GPU varsa gerek yok
+- `[BİLGİ] HESAPLAMA DONANIMI: CUDA` logu ile doğrulanıyor
+
+**SimPEG Split Section**
+- Gravite ve manyetik sonuçları ayrı kartlarda — her biri kendi Gauss-Newton grafiğiyle
+- Adam vs SimPEG fark açıklaması
+- Koordinat sistemi düzeltmesi — mesh origin ve obs_pts Z koordinatı
+
+### Düzeltmeler
+
+- `setSimPEGAvailable` → `setSimpegAvailable` typo düzeltmesi (siyah ekran)
+- Panel penceresi `window-close` IPC — `event.sender` ile hangi pencere belirleniyor
+- `WebkitAppRegion: drag` içinde buton tıklanamama sorunu
+- `viewTabs` sadece 3D — Kesit/Harita/İstatistik ayrı pencere olarak açılıyor
+- Backend bağlantı sıralaması — modül status'ları `backendOk=true` sonrası kontrol ediliyor
+- Leaflet popup içinde tek tırnak syntax hatası
+
+---
+
 # CHANGELOG — GeoPINN Studio
 
 ---
