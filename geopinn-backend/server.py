@@ -33,6 +33,24 @@ except ImportError:
     PINN_STUB_OK = False
 
 try:
+    from engines.ip_forward import IPForwardMotor, model_to_ip_params
+    IP_AVAILABLE = True
+except ImportError:
+    IP_AVAILABLE = False
+
+try:
+    from engines.sp_forward import SPForwardMotor
+    SP_AVAILABLE = True
+except ImportError:
+    SP_AVAILABLE = False
+
+try:
+    from engines.data_fusion import DataFusionEngine
+    FUSION_AVAILABLE = True
+except ImportError:
+    FUSION_AVAILABLE = False
+
+try:
     from engines.gravity_fvm import PrismGravityForwardFVM
     from engines.magnetic_fvm import PrismMagneticForwardFVM
     FVM_AVAILABLE = True
@@ -1483,6 +1501,286 @@ def list_methods():
 
 
 # ── FVM Motor Durumu & Karşılaştırma ──────────────────────────────────────────
+# ── Data Fusion ────────────────────────────────────────────────────────────────
+class DataFusionRequest(BaseModel):
+    dataset:          Optional[str] = None
+    selected_index:   int   = 0
+    method:           str   = "gamma"   # weighted|gamma|and|or|index
+    gamma:            float = 0.85
+    # Hangi yöntemler dahil edilsin
+    use_gravity:      bool  = True
+    use_magnetic:     bool  = True
+    use_csamt:        bool  = True
+    use_ip:           bool  = False
+    use_sp:           bool  = False
+    use_radiometry:   bool  = False
+    use_heat_flow:    bool  = False
+    # Ağırlıklar (method=weighted için)
+    w_gravity:        float = 0.15
+    w_magnetic:       float = 0.15
+    w_csamt:          float = 0.15
+    w_ip:             float = 0.20
+    w_sp:             float = 0.15
+    w_radiometry:     float = 0.15
+    w_heat_flow:      float = 0.05
+
+
+@app.post("/api/fusion/composite")
+def fusion_composite(req: DataFusionRequest):
+    """Çok-yöntemli bileşik anomali skoru (Porwal et al. 2003)."""
+    if not FUSION_AVAILABLE:
+        raise HTTPException(status_code=503,
+            detail="Fusion modülü yüklenemedi.")
+
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+    import numpy as np
+
+    # Forward hesapla — aktif yöntemler için
+    grav_data = mag_data = csamt_data = ip_data = sp_data = None
+    th_u_data = eu_data = hf_data = None
+
+    if req.use_gravity and GRAV_AVAILABLE:
+        from engines.gravity_prism import PrismGravityForward
+        eng = PrismGravityForward()
+        r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
+        grav_data = np.array(r["gz_mgal"])
+
+    if req.use_magnetic and MAG_AVAILABLE:
+        from engines.magnetic_prism import PrismMagneticForward
+        eng = PrismMagneticForward()
+        r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
+        mag_data = np.array(r["tmi_nt"])
+
+    if req.use_ip and IP_AVAILABLE:
+        from engines.ip_forward import IPForwardMotor
+        eng = IPForwardMotor()
+        obs_x = np.linspace(0, DOMAIN_EXTENT, 21)
+        r = eng.calculate(model_fwd, grids["x_c"], grids["z_c"], obs_x)
+        ip_data = np.array(r["chargeability"])
+
+    if req.use_sp and SP_AVAILABLE:
+        eng = SPForwardMotor()
+        r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
+        sp_data = np.array(r["sp_mv"])
+
+    if req.use_radiometry and RADIOMETRY_AVAILABLE:
+        u  = 3.0  + model_fwd * 12.0
+        th = 12.0 + model_fwd * 48.0
+        k  = 2.5  + model_fwd * 2.0
+        rad = forward_radiometry_surface(u, th, k)
+        th_u_data = np.nan_to_num(rad["Th_U"])
+        eu_data   = rad["eU_ppm"]
+        if req.use_heat_flow:
+            from engines.heat_flow_fvm import HeatFlowFVM
+            heng = HeatFlowFVM()
+            hr = heng.calculate(u, th, k, grids["x_c"], grids["y_c"], grids["z_c"])
+            hf_data = np.array(hr["heat_flux_mw_m2"])
+
+    weights = {
+        "gravity":   req.w_gravity,
+        "magnetic":  req.w_magnetic,
+        "csamt":     req.w_csamt,
+        "ip":        req.w_ip,
+        "sp":        req.w_sp,
+        "radiometry":req.w_radiometry,
+        "heat_flow": req.w_heat_flow,
+    }
+
+    eng_f = DataFusionEngine()
+    result = eng_f.fuse(
+        gravity_mgal      = grav_data,
+        magnetic_nt       = mag_data,
+        ip_chargeability  = ip_data,
+        sp_mv             = sp_data,
+        radiometry_th_u   = th_u_data,
+        radiometry_eu_ppm = eu_data,
+        heat_flow_mw_m2   = hf_data,
+        method  = req.method,
+        gamma   = req.gamma,
+        weights = weights if req.method == "weighted" else None,
+    )
+
+    return {
+        "dataset_used":    os.path.basename(used_path) if used_path else "demo",
+        "composite_score": result["composite_score"],
+        "method_scores":   result["method_scores"],
+        "stats":           result["stats"],
+    }
+
+
+@app.get("/api/fusion/status")
+def fusion_status():
+    return {
+        "available": FUSION_AVAILABLE,
+        "methods":   ["weighted", "gamma", "and", "or", "index"],
+        "reference": "Porwal et al. (2003), Bonham-Carter (1994)",
+        "default_weights": DataFusionEngine.DEFAULT_WEIGHTS,
+    }
+
+
+# ── SP (Self-Potential) ───────────────────────────────────────────────────────
+class SPForwardRequest(BaseModel):
+    dataset:          Optional[str] = None
+    selected_index:   int   = 0
+    sigma_host:       float = 2e-3
+    sigma_ore:        float = 0.1
+    porosity_host:    float = 0.05
+    porosity_ore:     float = 0.15
+    w_electrokinetic: float = 1.0
+    w_thermoelectric: float = 0.3
+    w_electrochemical:float = 0.5
+    use_heat_flow:    bool  = False
+
+
+@app.post("/api/sp/forward")
+def sp_forward(req: SPForwardRequest):
+    """
+    Öz-Potansiyel (SP) ileri modelleme.
+    Elektrokinetik + Termoelektrik + Elektrokimyasal kuplaj.
+    Referans: Revil & Leroy (2004), Sill (1983), Mendonça (2008).
+    """
+    if not SP_AVAILABLE:
+        raise HTTPException(status_code=503,
+            detail="SP modülü yüklenemedi. engines/sp_forward.py kontrol edin.")
+
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+
+    motor = SPForwardMotor()
+    result = motor.calculate(
+        model_fwd,
+        grids["x_c"], grids["y_c"], grids["z_c"],
+        sigma_host=req.sigma_host,
+        sigma_ore=req.sigma_ore,
+        porosity_host=req.porosity_host,
+        porosity_ore=req.porosity_ore,
+        w_electrokinetic=req.w_electrokinetic,
+        w_thermoelectric=req.w_thermoelectric,
+        w_electrochemical=req.w_electrochemical,
+    )
+
+    return {
+        "dataset_used": os.path.basename(used_path) if used_path else "demo_sentetik",
+        "sp_mv":        result["sp_mv"],
+        "sp_ek_mv":     result["sp_ek_mv"],
+        "sp_te_mv":     result["sp_te_mv"],
+        "sp_ec_mv":     result["sp_ec_mv"],
+        "obs_x":        result["obs_x"],
+        "obs_y":        result["obs_y"],
+        "stats":        result["stats"],
+        "parameters": {
+            "sigma_host_Sm":  req.sigma_host,
+            "sigma_ore_Sm":   req.sigma_ore,
+            "weights": {
+                "electrokinetic":  req.w_electrokinetic,
+                "thermoelectric":  req.w_thermoelectric,
+                "electrochemical": req.w_electrochemical,
+            }
+        }
+    }
+
+
+@app.get("/api/sp/status")
+def sp_status():
+    return {
+        "available": SP_AVAILABLE,
+        "mechanisms": {
+            "electrokinetic":  "Streaming potential — hidrotermal akışkan (Revil & Leroy 2004)",
+            "thermoelectric":  "Seebeck etkisi — sıcaklık gradyanı (Revil et al. 2012)",
+            "electrochemical": "Battery model — sülfür mineralizasyonu (Sato & Mooney 1960)",
+        },
+        "reference": "Mendonça (2008), Geophysics 73(1), F33-F43",
+        "beylikova_expected_mv": "-50 ile -300 mV (hidrotermal + sülfür)",
+    }
+
+
+# ── IP (Induced Polarization) ─────────────────────────────────────────────────
+class IPForwardRequest(BaseModel):
+    dataset:       Optional[str] = None
+    selected_index: int = 0
+    frequencies:   List[float] = [0.125, 0.5, 2.0, 8.0, 32.0]
+    a_spacing:     float = 20.0
+    n_max:         int   = 6
+    # Petrofizik — host kaya
+    rho0_host:     float = 500.0
+    m_host:        float = 0.02
+    tau_host:      float = 0.10
+    c_host:        float = 0.50
+    # Petrofizik — cevher/sülfür
+    rho0_ore:      float = 15.0
+    m_ore:         float = 0.55
+    tau_ore:       float = 0.80
+    c_ore:         float = 0.35
+
+
+@app.post("/api/ip/forward")
+def ip_forward(req: IPForwardRequest):
+    """
+    Cole-Cole IP ileri modelleme — dipole-dipole pseudosection.
+    Referans: Pelton et al. (1978), Geophysics 43(3).
+    """
+    if not IP_AVAILABLE:
+        raise HTTPException(status_code=503,
+            detail="IP modülü yüklenemedi. engines/ip_forward.py kontrol edin.")
+
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+
+    motor = IPForwardMotor()
+    import numpy as np
+    freqs = np.array(req.frequencies)
+    obs_x = np.linspace(0, DOMAIN_EXTENT, 21)
+
+    result = motor.calculate(
+        model_fwd,
+        grids["x_c"], grids["z_c"], obs_x,
+        frequencies=freqs,
+        a_spacing=req.a_spacing,
+        n_max=req.n_max,
+        rho0_host=req.rho0_host, m_host=req.m_host,
+        tau_host=req.tau_host,  c_host=req.c_host,
+        rho0_ore=req.rho0_ore,  m_ore=req.m_ore,
+        tau_ore=req.tau_ore,    c_ore=req.c_ore,
+    )
+
+    return {
+        "dataset_used":   os.path.basename(used_path) if used_path else "demo_sentetik",
+        "rho_a_dc":       result["rho_a_dc"].tolist(),
+        "chargeability":  result["chargeability"].tolist(),
+        "phase_mrad":     result["phase_mrad"][:, :, 0].tolist(),  # İlk frekans
+        "pseudo_x":       result["pseudo_x"].tolist(),
+        "pseudo_z":       result["pseudo_z"].tolist(),
+        "K_factors":      result["K_factors"].tolist(),
+        "n_values":       result["n_values"].tolist(),
+        "stats":          result["stats"],
+        "parameters": {
+            "a_spacing_m":   req.a_spacing,
+            "n_max":         req.n_max,
+            "frequencies_hz": req.frequencies,
+            "cole_cole_host": {"rho0": req.rho0_host, "m": req.m_host,
+                               "tau": req.tau_host,  "c": req.c_host},
+            "cole_cole_ore":  {"rho0": req.rho0_ore,  "m": req.m_ore,
+                               "tau": req.tau_ore,   "c": req.c_ore},
+        }
+    }
+
+
+@app.get("/api/ip/status")
+def ip_status():
+    return {
+        "available": IP_AVAILABLE,
+        "method":    "Cole-Cole kompleks özdirenç, dipole-dipole array",
+        "reference": "Pelton et al. (1978), Geophysics 43(3), 588-609",
+        "parameters": ["rho0", "m (chargeability)", "tau (relaxation)", "c (frequency exponent)"],
+        "beylikova_targets": {
+            "host": "ρ₀=500 Ω·m, m=0.02 (kireçtaşı/şist)",
+            "altered": "ρ₀=50 Ω·m, m=0.25 (sülfürlü alterasyon)",
+            "ore": "ρ₀=15 Ω·m, m=0.55 (pirit/arsenopirit zonu)",
+        }
+    }
+
+
 @app.get("/api/pinn/status")
 def pinn_status_endpoint():
     """PINN modülü durumu — v4.0 roadmap."""
