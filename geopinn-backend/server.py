@@ -27,6 +27,12 @@ from pydantic import BaseModel, Field
 # Fizik motorları (proje içindeki engines/ klasöründen)
 from engines import gravity_prism, magnetic_prism, csamt_1d
 try:
+    from engines.pinn_stub import pinn_status as _pinn_status
+    PINN_STUB_OK = True
+except ImportError:
+    PINN_STUB_OK = False
+
+try:
     from engines.gravity_fvm import PrismGravityForwardFVM
     from engines.magnetic_fvm import PrismMagneticForwardFVM
     FVM_AVAILABLE = True
@@ -1465,6 +1471,25 @@ def list_methods():
 
 
 # ── FVM Motor Durumu & Karşılaştırma ──────────────────────────────────────────
+@app.get("/api/pinn/status")
+def pinn_status_endpoint():
+    """PINN modülü durumu — v4.0 roadmap."""
+    if PINN_STUB_OK:
+        from engines.pinn_stub import pinn_status
+        return pinn_status()
+    return {
+        "available": False,
+        "version": "stub-3.x",
+        "roadmap": "v4.0.0",
+        "description": "PINN entegrasyonu v4.0'da gelecek",
+        "planned_features": [
+            "Laplace/Poisson PDE kayıp fonksiyonu",
+            "PyTorch autograd fizik katmanı",
+            "Çok-yöntemli PINN joint inversion",
+        ],
+    }
+
+
 @app.get("/api/fvm/status")
 def fvm_status():
     return {
@@ -1622,17 +1647,21 @@ def simpeg_inversion(req: SimPEGInversionRequest):
     nbc = req.nbc
     dh  = DOMAIN_EXTENT / nbc
 
-    # Mesh — z: -480'den 0'a (yüzey=0, derinlik negatif)
+    # Mesh — GeoPINN koordinat sistemi ile tutarlı:
+    # X: -half..+half (doğu-batı)
+    # Y: -half..+half (kuzey-güney)  
+    # Z: -DOMAIN_EXTENT..0 (derinlik, yüzey=0, taban=-480m)
+    half = DOMAIN_EXTENT / 2
     mesh = discretize.TensorMesh(
-        [np.ones(nbc)*dh]*3,
-        origin=[-(nbc//2)*dh, -(nbc//2)*dh, -nbc*dh]
+        [np.ones(nbc)*dh, np.ones(nbc)*dh, np.ones(nbc)*dh],
+        origin=[-half, -half, -DOMAIN_EXTENT]
     )
 
-    # Gözlem noktaları — GeoPINN 21×21 ızgarasıyla aynı
-    half = DOMAIN_EXTENT / 2
+    # Gözlem noktaları — yüzey z=0, GeoPINN 21×21 ızgarasıyla aynı
     obs_1d = np.linspace(-half, half, 21)
     ox, oy = np.meshgrid(obs_1d, obs_1d)
-    obs_pts = np.c_[ox.ravel(), oy.ravel(), np.ones(ox.size)]
+    # Z=0: yüzey (SimPEG gravity receiver yüzey üstünde olmalı, +1m)
+    obs_pts = np.c_[ox.ravel(), oy.ravel(), np.full(ox.size, 0.5)]
 
     # d_obs yükle (X_mag_grav varsa oradan, yoksa Y'den forward)
     model_native, used_path = load_model_native(req.dataset, req.selected_index)
@@ -1679,7 +1708,7 @@ def simpeg_inversion(req: SimPEGInversionRequest):
         )
         # İşaret: SimPEG gz yukarı-pozitif, bizim d_obs aşağı-pozitif
         dat_g  = simpeg_data.Data(surv_g,
-                    dobs=-d_obs_g,       # işaret düzeltmesi
+                    dobs=d_obs_g,        # SimPEG gz: aşağı-pozitif (GeoPINN ile aynı)
                     relative_error=0.02,
                     noise_floor=req.noise_floor_grav)
         dmis_g = data_misfit.L2DataMisfit(simulation=sim_g, data=dat_g)
