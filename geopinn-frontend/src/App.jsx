@@ -5,7 +5,7 @@ import {
   FolderOpen, Download, Filter, Map, BarChart2, Play, Maximize2, Minimize2,
   Eye, EyeOff, Settings, RefreshCw, AlertCircle, CheckCircle, Info,
   Grid, Sliders, Mountain, FileText
-} from 'lucide-react';
+, Zap, GitMerge } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar
@@ -1413,6 +1413,36 @@ export default function App() {
   const [radResult, setRadResult]=useState(null);
   const [radRunning, setRadRunning]=useState(false);
   const [radAvailable, setRadAvailable]=useState(null);
+  // IP motoru
+  const [ipResult, setIpResult]=useState(null);
+  const [ipRunning, setIpRunning]=useState(false);
+  const [ipAvailable, setIpAvailable]=useState(null);
+  const [ipParams, setIpParams]=useState({
+    rho0_host:500, m_host:0.02, tau_host:0.10, c_host:0.50,
+    rho0_ore:15,   m_ore:0.55,  tau_ore:0.80,  c_ore:0.35,
+    a_spacing:20,  n_max:6,
+  });
+  // SP motoru
+  const [spResult, setSpResult]=useState(null);
+  const [spRunning, setSpRunning]=useState(false);
+  const [spAvailable, setSpAvailable]=useState(null);
+  const [spParams, setSpParams]=useState({
+    sigma_host:0.002, sigma_ore:0.1,
+    porosity_host:0.05, porosity_ore:0.15,
+    w_ek:1.0, w_te:0.3, w_ec:0.5,
+  });
+  // Füzyon
+  const [fusionResult, setFusionResult]=useState(null);
+  const [fusionRunning, setFusionRunning]=useState(false);
+  const [fusionAvailable, setFusionAvailable]=useState(null);
+  const [fusionMethod, setFusionMethod]=useState('gamma');
+  const [fusionLayers, setFusionLayers]=useState({
+    grav:true, mag:true, csamt:false,
+    ip:false, sp:false, radiometry:false, heat_flow:false,
+  });
+  // Elektrik sekme toggle
+  const [elecTab, setElecTab]=useState('ip');
+
   const [radParams, setRadParams]=useState({
     u_bg:3.0, u_ore:15.0, th_bg:12.0, th_ore:60.0,
     k_bg:2.5, k_ore:4.5, k_thermal:2.5,
@@ -1573,7 +1603,7 @@ export default function App() {
   const [uqIter, setUqIter]=useState(40);
 
   // Katmanlar & dataset
-  const [settings, setSettings]=useState({grav:true,mag:true,csamt:false,index:0});
+  const [settings, setSettings]=useState({grav:true,mag:true,csamt:false,ip:false,sp:false,index:0});
   const [datasets, setDatasets]=useState([]);
   const [selY, setSelY]=useState(null);
   const [selGM, setSelGM]=useState(null);
@@ -1650,6 +1680,12 @@ export default function App() {
       .then(d=>setFvmAvailable(d.available??false)).catch(()=>setFvmAvailable(false));
     apiFetch(`${apiBase}/api/radiometry/status`).then(r=>r.json())
       .then(d=>setRadAvailable(d.available??false)).catch(()=>setRadAvailable(false));
+    apiFetch(`${apiBase}/api/ip/status`).then(r=>r.json())
+      .then(d=>setIpAvailable(d.available??false)).catch(()=>setIpAvailable(false));
+    apiFetch(`${apiBase}/api/sp/status`).then(r=>r.json())
+      .then(d=>setSpAvailable(d.available??false)).catch(()=>setSpAvailable(false));
+    apiFetch(`${apiBase}/api/fusion/status`).then(r=>r.json())
+      .then(d=>setFusionAvailable(d.available??false)).catch(()=>setFusionAvailable(false));
     apiFetch(`${apiBase}/api/data/formats`).then(r=>r.json())
       .then(d=>setDataFormats(d.formats||{})).catch(()=>{});
   }, [backendOk, apiBase]);
@@ -1719,6 +1755,73 @@ export default function App() {
   };
 
   // FVM+Rad status: backendOk useEffect'e taşındı
+
+  const runIP=async()=>{
+    setIpRunning(true); log('info','IP (Cole-Cole) pseudosection hesaplanıyor...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/ip/forward`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dataset:selY, selected_index:settings.index,
+          frequencies:[0.125,0.5,2.0,8.0,32.0],
+          a_spacing:ipParams.a_spacing, n_max:ipParams.n_max,
+          rho0_host:ipParams.rho0_host, m_host:ipParams.m_host,
+          tau_host:ipParams.tau_host,   c_host:ipParams.c_host,
+          rho0_ore:ipParams.rho0_ore,   m_ore:ipParams.m_ore,
+          tau_ore:ipParams.tau_ore,     c_ore:ipParams.c_ore,
+        }),
+      })).json();
+      setIpResult(d);
+      setRightTab('elec');
+      log('ok',`IP tamamlandı — Chargeability maks: ${d.stats?.charge_max?.toFixed(3)||'—'}`);
+    }catch(e){log('err',`IP hatası: ${e.message}`);}
+    finally{setIpRunning(false);}
+  };
+
+  const runSP=async()=>{
+    setSpRunning(true); log('info','SP (öz-potansiyel) hesaplanıyor...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/sp/forward`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dataset:selY, selected_index:settings.index,
+          sigma_host:spParams.sigma_host, sigma_ore:spParams.sigma_ore,
+          porosity_host:spParams.porosity_host, porosity_ore:spParams.porosity_ore,
+          w_electrokinetic:spParams.w_ek,
+          w_thermoelectric:spParams.w_te,
+          w_electrochemical:spParams.w_ec,
+        }),
+      })).json();
+      setSpResult(d);
+      setRightTab('elec');
+      log('ok',`SP tamamlandı — Min: ${d.stats?.sp_min_mv?.toFixed(1)||'—'} mV`);
+    }catch(e){log('err',`SP hatası: ${e.message}`);}
+    finally{setSpRunning(false);}
+  };
+
+  const runFusion=async()=>{
+    setFusionRunning(true); log('info','Çok-yöntemli füzyon hesaplanıyor...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/fusion/composite`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dataset:selY, selected_index:settings.index,
+          method:fusionMethod,
+          use_gravity:fusionLayers.grav,
+          use_magnetic:fusionLayers.mag,
+          use_csamt:fusionLayers.csamt,
+          use_ip:fusionLayers.ip,
+          use_sp:fusionLayers.sp,
+          use_radiometry:fusionLayers.radiometry,
+          use_heat_flow:fusionLayers.heat_flow,
+        }),
+      })).json();
+      setFusionResult(d);
+      setRightTab('fusion');
+      log('ok',`Füzyon tamamlandı — Bileşik maks: ${d.stats?.composite_max?.toFixed(3)||'—'} · Yüksek öncelik: ${d.stats?.n_high_priority||0} piksel`);
+    }catch(e){log('err',`Füzyon hatası: ${e.message}`);}
+    finally{setFusionRunning(false);}
+  };
 
   const runRadiometry=async()=>{
     setRadRunning(true); log('info','Radyometri & ısı akışı hesaplanıyor...');
@@ -1917,9 +2020,11 @@ export default function App() {
   const toggleFs=()=>!document.fullscreenElement?viewerRef.current?.requestFullscreen():document.exitFullscreen();
 
   const layerConfig=[
-    {key:'grav',label:'Gravite',sub:'Bouguer anomali',icon:Gauge,color:C.teal},
-    {key:'mag',label:'Manyetik',sub:'TMI anomali',icon:Magnet,color:C.accent},
-    {key:'csamt',label:'CSAMT',sub:'Görünür özdirenç',icon:Radio,color:C.purple},
+    {key:'grav',  label:'Gravite',  sub:'Bouguer anomali',    icon:Gauge,    color:C.teal},
+    {key:'mag',   label:'Manyetik', sub:'TMI anomali',         icon:Magnet,   color:C.accent},
+    {key:'csamt', label:'CSAMT',    sub:'Görünür özdirenç',    icon:Radio,    color:C.purple},
+    {key:'ip',    label:'IP',       sub:'Chargeability',       icon:Zap,      color:'#f97316'},
+    {key:'sp',    label:'SP',       sub:'Öz-potansiyel [mV]', icon:Activity, color:'#a855f7'},
   ];
 
   const viewTabs=[
@@ -1932,6 +2037,8 @@ export default function App() {
     {id:'simpeg', label:'SimPEG',     icon:GitCompare},
     {id:'fvm',    label:'FVM',        icon:Layers},
     {id:'radio',  label:'Radyometri', icon:Waves},
+    {id:'elec',   label:'Elektrik',   icon:Zap},
+    {id:'fusion', label:'Füzyon',     icon:GitMerge},
     {id:'geom',   label:'Geometri',   icon:Mountain},
     {id:'filter', label:'Filtre',     icon:Filter},
     {id:'export', label:'Dışa Aktar', icon:Download},
@@ -3058,6 +3165,282 @@ export default function App() {
                 )}
               </div>
             )}
+            {rightTab==='elec' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
+
+                {/* IP / SP toggle */}
+                <div style={{display:'flex',gap:1,background:C.bg,borderRadius:4,padding:2}}>
+                  {[{id:'ip',label:'IP — Chargeability'},{id:'sp',label:'SP — Öz-Potansiyel'}].map(t=>(
+                    <button key={t.id} onClick={()=>setElecTab(t.id)}
+                      style={{flex:1,padding:'5px 8px',border:'none',borderRadius:3,cursor:'pointer',
+                        fontSize:10,fontWeight:700,letterSpacing:'0.04em',
+                        background:elecTab===t.id?C.accent:'transparent',
+                        color:elecTab===t.id?'#fff':C.textMid}}>
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+
+                {elecTab==='ip' && (<>
+                  <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                    Cole-Cole kompleks özdirenç — dipole-dipole pseudosection.
+                    Yüksek chargeability → sülfür mineralizasyonu.
+                  </div>
+                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                    <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:8,textTransform:'uppercase'}}>
+                      Host Kaya
+                    </div>
+                    {[
+                      ['ρ₀ host (Ω·m)','rho0_host',10,1000,10],
+                      ['m host','m_host',0,0.5,0.01],
+                      ['τ host (s)','tau_host',0.01,2,0.01],
+                    ].map(([label,key,min,max,step])=>(
+                      <div key={key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:9,color:C.textMid,flex:'0 0 100px'}}>{label}</span>
+                        <input type="range" min={min} max={max} step={step}
+                          value={ipParams[key]}
+                          onChange={e=>setIpParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
+                          style={{flex:1,accentColor:'#f97316'}}/>
+                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',minWidth:40,textAlign:'right'}}>
+                          {ipParams[key]}
+                        </span>
+                      </div>
+                    ))}
+                    <div style={{fontSize:10,fontWeight:700,color:C.text,margin:'8px 0',textTransform:'uppercase'}}>
+                      Cevher / Sülfür Zonu
+                    </div>
+                    {[
+                      ['ρ₀ cevher (Ω·m)','rho0_ore',1,200,1],
+                      ['m cevher','m_ore',0.1,0.9,0.01],
+                      ['τ cevher (s)','tau_ore',0.1,3,0.1],
+                    ].map(([label,key,min,max,step])=>(
+                      <div key={key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:9,color:C.textMid,flex:'0 0 100px'}}>{label}</span>
+                        <input type="range" min={min} max={max} step={step}
+                          value={ipParams[key]}
+                          onChange={e=>setIpParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
+                          style={{flex:1,accentColor:'#f97316'}}/>
+                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',minWidth:40,textAlign:'right'}}>
+                          {ipParams[key]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <Btn onClick={runIP} icon={ipRunning?Loader2:Zap} variant='teal' size='sm'
+                    style={{width:'100%',background:'#f97316'}} disabled={ipRunning||ipAvailable===false}>
+                    {ipRunning?'Hesaplanıyor...':ipAvailable===null?'Kontrol ediliyor...':ipAvailable===false?'IP modülü yok':'IP Pseudosection Hesapla'}
+                  </Btn>
+                  {ipResult&&(
+                    <div style={{background:C.bg,border:`1px solid #f9731630`,borderRadius:5,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#f97316',marginBottom:6,textTransform:'uppercase'}}>
+                        IP Sonuçları
+                      </div>
+                      {[
+                        ['ρₐ min', ipResult.stats?.rho_a_min_ohmm?.toFixed(1)+' Ω·m'],
+                        ['ρₐ maks', ipResult.stats?.rho_a_max_ohmm?.toFixed(1)+' Ω·m'],
+                        ['Chargeability maks', ipResult.stats?.charge_max?.toFixed(3)],
+                        ['Faz maks', ipResult.stats?.phase_max_mrad?.toFixed(1)+' mrad'],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                          <span style={{color:C.textMid}}>{k}</span>
+                          <span style={{fontFamily:'monospace',color:'#f97316'}}>{v}</span>
+                        </div>
+                      ))}
+                      <div style={{marginTop:6,fontSize:10,color:C.textMid,padding:'5px 8px',
+                        background:`#f9731610`,borderRadius:3,lineHeight:1.5}}>
+                        {ipResult.stats?.interpretation}
+                      </div>
+                    </div>
+                  )}
+                </>)}
+
+                {elecTab==='sp' && (<>
+                  <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                    Öz-potansiyel: elektrokinetik + termoelektrik + elektrokimyasal kuplaj.
+                    Negatif SP → hidrotermal akışkan veya sülfür.
+                  </div>
+                  <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                    {[
+                      ['σ host (S/m)','sigma_host',0.0001,0.1,0.0001],
+                      ['σ cevher (S/m)','sigma_ore',0.01,1,0.01],
+                      ['Gözeneklilik host','porosity_host',0.01,0.3,0.01],
+                      ['Ağırlık EK','w_ek',0,2,0.1],
+                      ['Ağırlık TE','w_te',0,2,0.1],
+                      ['Ağırlık EC','w_ec',0,2,0.1],
+                    ].map(([label,key,min,max,step])=>(
+                      <div key={key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                        <span style={{fontSize:9,color:C.textMid,flex:'0 0 120px'}}>{label}</span>
+                        <input type="range" min={min} max={max} step={step}
+                          value={spParams[key]}
+                          onChange={e=>setSpParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
+                          style={{flex:1,accentColor:'#a855f7'}}/>
+                        <span style={{fontSize:9,fontFamily:'monospace',color:'#a855f7',minWidth:45,textAlign:'right'}}>
+                          {spParams[key]}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <Btn onClick={runSP} icon={spRunning?Loader2:Activity} variant='teal' size='sm'
+                    style={{width:'100%',background:'#a855f7'}} disabled={spRunning||spAvailable===false}>
+                    {spRunning?'Hesaplanıyor...':spAvailable===null?'Kontrol ediliyor...':spAvailable===false?'SP modülü yok':'SP Anomali Hesapla'}
+                  </Btn>
+                  {spResult&&(
+                    <div style={{background:C.bg,border:`1px solid #a855f730`,borderRadius:5,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:'#a855f7',marginBottom:6,textTransform:'uppercase'}}>
+                        SP Sonuçları
+                      </div>
+                      {[
+                        ['SP min', spResult.stats?.sp_min_mv?.toFixed(1)+' mV'],
+                        ['SP maks', spResult.stats?.sp_max_mv?.toFixed(1)+' mV'],
+                        ['Baskın kaynak', spResult.stats?.dominant_source],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                          <span style={{color:C.textMid}}>{k}</span>
+                          <span style={{fontFamily:'monospace',color:'#a855f7',maxWidth:120,textAlign:'right',fontSize:10}}>{v}</span>
+                        </div>
+                      ))}
+                      <div style={{marginTop:6,fontSize:10,color:C.textMid,padding:'5px 8px',
+                        background:`#a855f710`,borderRadius:3,lineHeight:1.5}}>
+                        {spResult.stats?.interpretation}
+                      </div>
+                    </div>
+                  )}
+                </>)}
+              </div>
+            )}
+
+            {/* Füzyon paneli */}
+            {rightTab==='fusion' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
+                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                  Çok-yöntemli bileşik anomali skoru. Seçilen yöntemlerin çıktıları
+                  tek bir mineral potansiyel haritasında birleştirilir.
+                </div>
+
+                {/* Yöntem seçimi */}
+                <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:8,textTransform:'uppercase'}}>
+                    Füzyon Yöntemi
+                  </div>
+                  <select value={fusionMethod} onChange={e=>setFusionMethod(e.target.value)}
+                    style={{width:'100%',padding:'4px 6px',borderRadius:3,fontSize:11,
+                      border:`1px solid ${C.border}`,background:C.panel,color:C.text,marginBottom:6}}>
+                    <option value="gamma">Fuzzy Gamma (γ=0.85) — önerilen</option>
+                    <option value="weighted">Ağırlıklı Toplam</option>
+                    <option value="and">Fuzzy AND — konservatif</option>
+                    <option value="or">Fuzzy OR — liberal</option>
+                    <option value="index">Index Overlay (sayım)</option>
+                  </select>
+                  <div style={{fontSize:9,color:C.textLow}}>
+                    Referans: Porwal et al. (2003), Bonham-Carter (1994)
+                  </div>
+                </div>
+
+                {/* Veri katmanı seçimi */}
+                <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                  <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:8,textTransform:'uppercase'}}>
+                    Dahil Edilecek Yöntemler
+                  </div>
+                  {[
+                    {key:'grav',      label:'Gravite',    color:C.teal},
+                    {key:'mag',       label:'Manyetik',   color:C.accent},
+                    {key:'csamt',     label:'CSAMT',      color:C.purple},
+                    {key:'ip',        label:'IP',         color:'#f97316'},
+                    {key:'sp',        label:'SP',         color:'#a855f7'},
+                    {key:'radiometry',label:'Radyometri', color:'#eab308'},
+                    {key:'heat_flow', label:'Isı Akışı',  color:'#ef4444'},
+                  ].map(({key,label,color})=>(
+                    <label key={key} style={{display:'flex',alignItems:'center',gap:8,
+                      marginBottom:6,cursor:'pointer',fontSize:11}}>
+                      <input type="checkbox"
+                        checked={fusionLayers[key]}
+                        onChange={e=>setFusionLayers(p=>({...p,[key]:e.target.checked}))}
+                        style={{accentColor:color,width:14,height:14}}/>
+                      <span style={{color:fusionLayers[key]?color:C.textMid,fontWeight:fusionLayers[key]?700:400}}>
+                        {label}
+                      </span>
+                    </label>
+                  ))}
+                  <div style={{fontSize:9,color:C.textLow,marginTop:4}}>
+                    {Object.values(fusionLayers).filter(Boolean).length} yöntem seçili
+                  </div>
+                </div>
+
+                <Btn onClick={runFusion} icon={fusionRunning?Loader2:GitMerge} variant='teal' size='sm'
+                  style={{width:'100%'}} disabled={fusionRunning||fusionAvailable===false||
+                    Object.values(fusionLayers).filter(Boolean).length===0}>
+                  {fusionRunning?'Hesaplanıyor...':fusionAvailable===null?'Kontrol ediliyor...':
+                   fusionAvailable===false?'Füzyon modülü yok':'Bileşik Anomali Hesapla'}
+                </Btn>
+
+                {fusionResult&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{background:C.bg,border:`1px solid ${C.teal}30`,borderRadius:5,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.teal,marginBottom:6,textTransform:'uppercase'}}>
+                        Füzyon Sonuçları
+                      </div>
+                      {[
+                        ['Bileşik maks', fusionResult.stats?.composite_max?.toFixed(3)],
+                        ['Bileşik ort.', fusionResult.stats?.composite_mean?.toFixed(3)],
+                        ['Yüksek öncelik', `${fusionResult.stats?.n_high_priority} piksel (%${fusionResult.stats?.pct_high})`],
+                        ['Orta öncelik', `${fusionResult.stats?.n_medium_priority} piksel (%${fusionResult.stats?.pct_medium})`],
+                        ['Aktif yöntem', fusionResult.stats?.n_methods],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                          <span style={{color:C.textMid}}>{k}</span>
+                          <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                        </div>
+                      ))}
+                      <div style={{marginTop:6,fontSize:10,color:C.textMid,padding:'5px 8px',
+                        background:`${C.teal}10`,borderRadius:3,lineHeight:1.5}}>
+                        {fusionResult.stats?.interpretation}
+                      </div>
+                    </div>
+
+                    {/* Öncelikli hedef bölgeler */}
+                    {fusionResult.stats?.priority_zones?.length>0&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.accent}30`,borderRadius:5,padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.accent,marginBottom:6,textTransform:'uppercase'}}>
+                          Öncelikli Hedef Bölgeler
+                        </div>
+                        {fusionResult.stats.priority_zones.slice(0,3).map((z,i)=>(
+                          <div key={i} style={{marginBottom:6,padding:'5px 8px',
+                            background:`${C.accent}08`,borderRadius:3}}>
+                            <div style={{display:'flex',justifyContent:'space-between',fontSize:10}}>
+                              <span style={{color:C.accent,fontWeight:700}}>Bölge {z.zone_id}</span>
+                              <span style={{fontFamily:'monospace',color:C.ok}}>skor: {z.max_score?.toFixed(3)}</span>
+                            </div>
+                            <div style={{fontSize:9,color:C.textMid,marginTop:2}}>
+                              Merkez: ({z.centroid_x}, {z.centroid_y}) · {z.n_pixels} piksel
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Yöntem korelasyonları */}
+                    {fusionResult.stats?.method_correlations&&
+                     Object.keys(fusionResult.stats.method_correlations).length>0&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:6,textTransform:'uppercase'}}>
+                          Yöntem Korelasyonları
+                        </div>
+                        {Object.entries(fusionResult.stats.method_correlations).map(([k,v])=>(
+                          <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:10,marginBottom:3}}>
+                            <span style={{color:C.textMid}}>{k}</span>
+                            <span style={{fontFamily:'monospace',
+                              color:Math.abs(v)>0.7?C.ok:Math.abs(v)>0.4?C.warn:C.textLow}}>
+                              {v?.toFixed(3)}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             {rightTab==='fvm' && (
               <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
                 <div style={{fontSize:12,fontWeight:700,color:C.text,borderBottom:`1px solid ${C.border}`,paddingBottom:6,marginBottom:2}}>
