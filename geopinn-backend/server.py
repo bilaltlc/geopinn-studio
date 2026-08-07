@@ -61,6 +61,18 @@ app.add_middleware(
 UPLOAD_DIR = "uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# ── Startup: örnek veriyi uploads/'a kopyala ──────────────────────────────────
+SAMPLE_DIR = os.path.join(os.path.dirname(__file__), "sample_data")
+if os.path.exists(SAMPLE_DIR):
+    for fname in os.listdir(SAMPLE_DIR):
+        if fname.endswith(".npy"):
+            src = os.path.join(SAMPLE_DIR, fname)
+            dst = os.path.join(UPLOAD_DIR, fname)
+            if not os.path.exists(dst):
+                import shutil
+                shutil.copy2(src, dst)
+                print(f"[startup] Örnek veri kopyalandı: {fname}")
+
 DEFAULT_DATASET = "Y_beylikova.npy"
 
 # ── Beylikova domain parametreleri (data_factory.py ile TUTARLI) ──────────────
