@@ -46,9 +46,17 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ## Screenshots
 
-### Multi-window — Leaflet Harita + Kesit + Ana Pencere
-![Multi Window](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_multi_window2.png)
-*Ayrı pencereler: Leaflet OSM harita, Z kesit görünümü, ana 3D viewer — eş zamanlı*
+### Split View — İstatistik + 3D Viewer
+![Split Stats](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_stats.png)
+*İST butonu — istatistik paneli 3D viewer yanında, aynı React state paylaşıyor*
+
+### Split View — Leaflet Harita + 3D
+![Split Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_map.png)
+*HRT butonu — Beylikova REE anomalisi OSM üzerinde, 3D model yanında*
+
+### Split View — Kesit + 3D
+![Split Slice](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_slice.png)
+*KST butonu — Z derinlik kesiti ve 3D izoyüzey eş zamanlı*
 
 ### Leaflet Anomali Haritası — OSM Üzerinde
 ![Leaflet Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_map.png)
@@ -57,6 +65,22 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 ### Kesit Görünümü (Z ekseni)
 ![Slice Z](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_slice2.png)
 *Z=5 derinlik kesiti · viridis renk skalası · 16³ grid*
+
+### IP — Cole-Cole Pseudosection
+![IP Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_ip_panel.png)
+*Cole-Cole parametreleri · Chargeability maks: 0.052 · Faz: 17.6 mrad · Orta sülfür alterasyonu*
+
+### SP — Öz-Potansiyel Anomali
+![SP Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_sp_panel.png)
+*Elektrokinetik baskın kaynak · SP min: -390 mV · Güçlü hidrotermal sistem*
+
+### Füzyon — 7 Yöntem Bileşik Anomali
+![Fusion Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fusion_panel.png)
+*Fuzzy Gamma γ=0.85 · Bileşik maks: 1.000 · Bölge 1 skor: 1.000 · 4 aktif yöntem*
+
+### Rehber — IP & SP Sekmeleri
+![Guide IP SP](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_guide_ip_sp.png)
+*Pelton (1978), Revil & Leroy (2004), Sill (1983) referanslı jeolojik yorum kılavuzu*
 
 ### SimPEG Tikhonov Inversion Sonuçları
 ![SimPEG Results](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_simpeg_results.png)
