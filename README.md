@@ -31,16 +31,18 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ---
 
-## v3.0.0.1 — What's New
+## v3.1.1 — What's New
 
 | Feature | Details |
 |---------|---------|
-| **Radiometry & Heat Flow** | U/Th/K → gammaray forward model, REE alteration index, FVM heat conduction |
-| **FVM Engine** | Poisson bounded domain solver, prism vs FVM comparison |
-| **Data Format Selector** | 7 geophysical formats auto-detected (CSV/XYZ/DAT) |
-| **Dual Theme** | Full dark `#0A0C0F` ↔ full light, persistent |
-| **Vertical Tab Rail** | 8 right-panel tabs in 46px icon rail |
-| **System Tray** | Minimize to tray, maximize on launch (Electron) |
+| **IP Forward Engine** | Cole-Cole complex resistivity, dipole-dipole pseudosection (Pelton 1978) |
+| **SP Forward Engine** | Electrokinetic + thermoelectric + electrochemical coupling (Revil 2004) |
+| **Data Fusion** | 7-method composite anomaly — Fuzzy Gamma, weighted, AND/OR, index overlay |
+| **Split View** | IST/KST/HRT panels beside 3D viewer — shared React state, no black screen |
+| **Electric Tab** | IP & SP toggle panel with Cole-Cole sliders and result cards |
+| **Fusion Tab** | 7-method selector, priority zone detection, correlation matrix |
+| **Updated Guide** | IP & SP, Fusion tabs with academic references |
+| **Prizma Katman Logo** | Custom GP monogram icon, frameless Electron titlebar |
 
 ---
 
@@ -160,7 +162,7 @@ Q(x)  = ρ·(9.52e-5·U + 2.56e-5·Th + 3.48e-6·K)  [W/m³]  heat production
 
 ---
 
-## FVM Results (v3.0.0.1)
+## FVM Results (v3.1.x)
 
 Benchmark on `Y_beylikova_vein_32x32x32.npy` (32³ grid):
 
