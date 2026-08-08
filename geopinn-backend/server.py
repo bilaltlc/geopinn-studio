@@ -58,6 +58,18 @@ except ImportError:
     FVM_AVAILABLE = False
 
 try:
+    from engines.gravity_prism import PrismGravityForward
+    GRAV_AVAILABLE = True
+except ImportError:
+    GRAV_AVAILABLE = False
+
+try:
+    from engines.magnetic_prism import PrismMagneticForward
+    MAG_AVAILABLE = True
+except ImportError:
+    MAG_AVAILABLE = False
+
+try:
     from engines.heat_flow_fvm import HeatFlowFVM, radiogenic_heat_production
     from engines.radiometry import (
         forward_radiometry_surface, ree_alteration_index,
@@ -1541,16 +1553,20 @@ def fusion_composite(req: DataFusionRequest):
     th_u_data = eu_data = hf_data = None
 
     if req.use_gravity and GRAV_AVAILABLE:
-        from engines.gravity_prism import PrismGravityForward
-        eng = PrismGravityForward()
-        r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
-        grav_data = np.array(r["gz_mgal"])
+        try:
+            eng = PrismGravityForward()
+            r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
+            grav_data = np.array(r["gz_mgal"])
+        except Exception as e:
+            print(f"[fusion] gravity hatası: {e}")
 
     if req.use_magnetic and MAG_AVAILABLE:
-        from engines.magnetic_prism import PrismMagneticForward
-        eng = PrismMagneticForward()
-        r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
-        mag_data = np.array(r["tmi_nt"])
+        try:
+            eng = PrismMagneticForward()
+            r = eng.calculate(model_fwd, grids["x_c"], grids["y_c"], grids["z_c"])
+            mag_data = np.array(r["tmi_nt"])
+        except Exception as e:
+            print(f"[fusion] magnetic hatası: {e}")
 
     if req.use_ip and IP_AVAILABLE:
         from engines.ip_forward import IPForwardMotor

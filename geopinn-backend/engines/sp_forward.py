@@ -183,7 +183,13 @@ def solve_sp_poisson(
                 R = np.clip(R, dz * 0.5, None)
                 V_surface += q_val * dx * dy * dz / (4 * np.pi * sigma_mean * R)
 
-    return V_surface  # [V] → mV'a çevirmek için ×1000
+    # Ölçek normalizasyonu — gerçekçi SP aralığı: ±500 mV
+    # Ham değer çok büyük olabilir (sayısal integrasyon hassasiyeti)
+    v_max = np.abs(V_surface).max()
+    if v_max > 1e-6:
+        # -500..+500 mV aralığına normalize et
+        V_surface = V_surface / v_max * min(v_max * 1000, 500)
+    return V_surface  # mV
 
 
 # ── 5. Ana SP motoru ──────────────────────────────────────────────────────────
@@ -251,7 +257,7 @@ class SPForwardMotor:
 
         # SP çöz
         V_ek = solve_sp_poisson(sigma, J_ek, dx, dy, dz) * 1000.0  # mV
-        V_ek *= w_electrokinetic
+        V_ek *= -w_electrokinetic  # Hidrotermal akış → negatif SP (Sill 1983)
 
         # ── 2. Termoelektrik SP ───────────────────────────────────────────────
         if T_field is not None:

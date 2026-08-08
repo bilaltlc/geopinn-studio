@@ -1,3 +1,73 @@
+## [v3.1.1] — 2026-08-08
+
+### Düzeltmeler
+
+- `jiHistory?.length` — null crash fix (istatistik siyah ekran)
+- SP ölçek normalizasyonu — -2628 mV → gerçekçi ±500 mV aralığı
+- `GRAV_AVAILABLE` / `MAG_AVAILABLE` flag'leri eklendi — füzyon Internal Server Error
+- `heat_flow_fvm.py` import düzeltmesi — `from fvm_core` → try/except with `engines.fvm_core`
+- Split view sistemi — floating pencere yerine 3D viewer yanında panel (İST/KST/HRT)
+- Sağ panel genişliği 256 → 320px
+- Log konsolu 180 → 110px
+- Rehber güncellendi: IP & SP, Füzyon sekmeleri eklendi
+- İş akışı 6 → 8 adım: IP/SP (③), Radyometri (④), Füzyon (⑤)
+
+### Notlar
+
+IP ve SP forward motorları şu an **sadece forward model** — ters çözüme (joint inversion)
+dahil değiller. IP/SP çıktıları füzyon aracılığıyla sondaj hedef seçimini destekler.
+IP/SP inversion entegrasyonu v4.0 PINN çerçevesiyle birlikte planlanmaktadır.
+
+---
+
+## [v3.1.0] — 2026-08-07
+
+### Yeni Fizik Motorları
+
+**IP (Induced Polarization) — `engines/ip_forward.py`**
+- Cole-Cole kompleks özdirenç modeli — Pelton et al. (1978), *Geophysics* 43(3)
+- Dipole-dipole pseudosection — Telford et al. (1990)
+- Pseudo-derinlik z≈0.519·n·a — Loke & Barker (1996)
+- Görünür chargeability — Seigel (1959)
+- Beylikova: pirit/arsenopirit → m>0.3, ρ₀<20 Ω·m → güçlü IP hedefi
+- `/api/ip/forward` + `/api/ip/status`
+
+**SP (Self-Potential) — `engines/sp_forward.py`**
+- Elektrokinetik kuplaj: L_ek = -ε₀εᵣζσ/(ηF) — Revil & Leroy (2004), *JGR*
+- Termoelektrik kuplaj (Seebeck): L_T = T_s·σ — Revil et al. (2012)
+- Elektrokimyasal battery model — Sato & Mooney (1960), Mendonça (2008)
+- Green fonksiyonu yüzey projeksiyonu — Sill (1983)
+- Beylikova beklenen: -50 ile -300 mV (hidrotermal + sülfür)
+- `/api/sp/forward` + `/api/sp/status`
+
+**Data Fusion — `engines/data_fusion.py`**
+- 7 yöntem bileşik anomali skoru: Gravite, Manyetik, CSAMT, IP, SP, Radyometri, Isı Akışı
+- Füzyon yöntemleri: Fuzzy Gamma (Zimmermann & Zysno 1980), Ağırlıklı Toplam,
+  Fuzzy AND/OR, Index Overlay (Carranza & Hale 2002)
+- Otomatik hedef bölge tespiti (scipy.ndimage.label)
+- Yöntem korelasyon matrisi
+- Referans: Porwal et al. (2003), Bonham-Carter (1994)
+- `/api/fusion/composite` + `/api/fusion/status`
+
+### Frontend Değişiklikleri
+
+**Elektrik Sekmesi (Sağ Panel)**
+- IP ve SP toggle menüsünde birleştirildi
+- Cole-Cole parametreleri slider ile (host/cevher ayrı)
+- SP mekanizma ağırlıkları (EK/TE/EC)
+- Sonuç kartları: ρₐ, chargeability, faz, SP anomali, baskın kaynak
+
+**Füzyon Sekmesi (Sağ Panel)**
+- 7 yöntemden istenen seçilir, checkbox ile
+- Füzyon yöntemi dropdown (5 seçenek)
+- Öncelikli hedef bölgeler listesi (merkez koordinat, skor, piksel sayısı)
+- Yöntem korelasyon matrisi (renk kodlu: yeşil=yüksek, sarı=orta)
+
+**Katmanlar Sekmesi**
+- IP ve SP katman seçenekleri eklendi (Grav/Mag/CSAMT yanına)
+
+---
+
 ## [v3.0.0.2] — 2026-08-06
 
 ### Yeni Özellikler

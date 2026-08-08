@@ -33,12 +33,20 @@ Beylikova REE-F-Ba-Th için tipik değerler:
 
 import numpy as np
 from typing import Optional, Tuple
-from fvm_core import (
-    build_padded_grid, embed_model,
-    assemble_poisson_7point, apply_dirichlet_boundary,
-    solve_poisson_field,
-    vertical_gradient_at_surface,
-)
+try:
+    from fvm_core import (
+        build_padded_grid, embed_model,
+        assemble_poisson_7point, apply_dirichlet_boundary,
+        solve_poisson_field,
+        vertical_gradient_at_surface,
+    )
+except ImportError:
+    from engines.fvm_core import (
+        build_padded_grid, embed_model,
+        assemble_poisson_7point, apply_dirichlet_boundary,
+        solve_poisson_field,
+        vertical_gradient_at_surface,
+    )
 import scipy.sparse as sp
 import scipy.sparse.linalg as spla
 

@@ -31,7 +31,7 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ---
 
-## v3.0.0.2 — What's New
+## v3.0.0.1 — What's New
 
 | Feature | Details |
 |---------|---------|
@@ -88,6 +88,9 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 | `magnetic_fvm.py` | Poisson FVM (∇²φ=∇·M) | scipy.sparse | — |
 | `heat_flow_fvm.py` | Heat conduction (∇²T=-Q/k) | scipy.sparse | — |
 | `radiometry.py` | U/Th/K → gammaray forward | numpy | — |
+| `ip_forward.py` | Cole-Cole IP, dipole-dipole | PyTorch | ✓ |
+| `sp_forward.py` | Electrokinetic + thermoelectric SP | numpy | — |
+| `data_fusion.py` | 7-method composite anomaly | numpy/scipy | — |
 
 ### Inversion
 | Method | Algorithm | Notes |

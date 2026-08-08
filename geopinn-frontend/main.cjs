@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Menu, Tray, nativeImage, screen } = require('electron');
 const path  = require('path');
 const fs    = require('fs');
 const http  = require('http');
@@ -34,9 +34,10 @@ const BACKEND_EXE = app.isPackaged
   ? path.join(process.resourcesPath, 'backend', 'server', 'server.exe')
   : null;
 
-let mainWindow  = null;
-let backendProc = null;
-let tray        = null;
+let mainWindow   = null;
+let detachWindow = null;
+let backendProc  = null;
+let tray         = null;
 
 // ── Backend başlatma ───────────────────────────────────────────────────────
 function startBackend(cfg) {
@@ -81,23 +82,111 @@ function startBackend(cfg) {
 ipcMain.handle('get-config',    ()      => loadConfig());
 ipcMain.handle('save-config',   (_, cfg) => { saveConfig(cfg); return true; });
 ipcMain.handle('get-version',   ()      => app.getVersion());
-ipcMain.handle('window-minimize',  () => mainWindow?.minimize());
-ipcMain.handle('window-maximize',  () => {
-  if (!mainWindow) return;
-  mainWindow.isMaximized() ? mainWindow.restore() : mainWindow.maximize();
-});
-ipcMain.handle('window-hide',      () => mainWindow?.hide());
-ipcMain.handle('window-close',     () => {
-  if (tray) mainWindow?.hide(); else app.exit(0);
-});
-ipcMain.handle('window-is-max',    () => mainWindow?.isMaximized() ?? false);
-
 ipcMain.handle('restart-backend', async () => {
   if (backendProc) { backendProc.kill(); backendProc = null; }
   const cfg = loadConfig();
   await startBackend(cfg);
   return true;
 });
+
+// Pencere kontrol IPC'leri
+ipcMain.handle('window-minimize',  (event) => {
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  (senderWin || mainWindow)?.minimize();
+});
+ipcMain.handle('window-maximize',  (event) => {
+  const senderWin = BrowserWindow.fromWebContents(event.sender) || mainWindow;
+  if (!senderWin) return;
+  senderWin.isMaximized() ? senderWin.restore() : senderWin.maximize();
+});
+ipcMain.handle('window-is-max',   () => mainWindow?.isMaximized() ?? false);
+ipcMain.handle('window-close',    (event) => {
+  // Hangi pencereden geldiğini bul
+  const senderWin = BrowserWindow.fromWebContents(event.sender);
+  // mainWindow ise tray'e küçült veya çık
+  if (!senderWin || senderWin === mainWindow) {
+    if (tray) mainWindow?.hide();
+    else app.exit(0);
+    return;
+  }
+  // Panel penceresi ise sadece onu kapat
+  senderWin.close();
+});
+
+// 3D detach penceresi
+ipcMain.handle('open-detach-window', (_, url) => { createDetachWindow(url); return true; });
+ipcMain.handle('close-detach-window', () => { detachWindow?.close(); return true; });
+
+// Harici monitöre taşı
+// Panel penceresi — mevcut ekranda veya harici monitörde açılır, sürüklenebilir
+const panelWindows = new Map();
+
+ipcMain.handle('open-panel-window', (_, {panelId, x, y, w, h}) => {
+  // Zaten açıksa öne getir
+  if (panelWindows.has(panelId)) {
+    const existing = panelWindows.get(panelId);
+    if (!existing.isDestroyed()) { existing.focus(); return true; }
+  }
+
+  const win = new BrowserWindow({
+    x: Math.max(0, x || 300),
+    y: Math.max(0, y || 200),
+    width:  w || 600,
+    height: h || 500,
+    minWidth: 300, minHeight: 200,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+    frame: false,
+    backgroundColor: '#0A0C0F',
+    title: 'GeoPINN Studio — Panel',
+    icon: path.join(__dirname, 'build', 'icon.ico'),
+    // Bağımsız pencere — ana pencere kapanınca bu da kapanır
+    parent: null,
+    skipTaskbar: false,
+    alwaysOnTop: false,
+  });
+
+  Menu.setApplicationMenu(null);
+
+  // Aynı frontend — panel parametresiyle
+  if (IS_DEV) {
+    win.loadURL(`http://localhost:5173/?panel=${panelId}`);
+  } else {
+    win.loadFile(path.join(FRONTEND_DIST, 'index.html'), { hash: `panel=${panelId}` });
+  }
+
+  panelWindows.set(panelId, win);
+  win.on('close', (e) => {
+    // Panel kapanınca sadece kendini kapat, ana pencereye dokunma
+    panelWindows.delete(panelId);
+  });
+  return true;
+});
+
+ipcMain.handle('move-to-external-display', (_, {x,y,w,h}) => {
+  const displays = screen.getAllDisplays();
+  const primary  = screen.getPrimaryDisplay();
+  const external = displays.find(d=>d.id!==primary.id);
+  if (!external) { console.log('[main] Harici monitör bulunamadı'); return false; }
+  const win = BrowserWindow.getFocusedWindow() || mainWindow;
+  if (!win) return false;
+  const ex = external.workArea;
+  // Boyutu koru, harici monitörün ortasına taşı
+  const nw = Math.min(w, ex.width);
+  const nh = Math.min(h, ex.height);
+  win.setBounds({
+    x: ex.x + Math.round((ex.width-nw)/2),
+    y: ex.y + Math.round((ex.height-nh)/2),
+    width: nw, height: nh,
+  });
+  return true;
+});
+
+// ── Menüyü tamamen kaldır ─────────────────────────────────────────────────
+Menu.setApplicationMenu(null);
 
 // ── Pencere ────────────────────────────────────────────────────────────────
 function createWindow() {
@@ -108,89 +197,105 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
     },
-    frame: true,
-    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
+    frame: false,
     show:  false,
     backgroundColor: '#0A0C0F',
     icon: path.join(__dirname, 'build', 'icon.ico'),
     title: 'GeoPINN Studio 3.0',
   });
 
-  // Tam ekran — uygulama açılışında maximize
   mainWindow.once('ready-to-show', () => {
     mainWindow.maximize();
     mainWindow.show();
   });
 
-  // Kapatma → tepside sakla (Windows/Linux)
-  mainWindow.on('close', (e) => {
-    if (process.platform !== 'darwin' && tray) {
-      e.preventDefault();
-      mainWindow.hide();
-    }
-  });
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url); return { action: 'deny' };
   });
 
+  // Kapatınca tepside sakla
+  mainWindow.on('close', (e) => {
+    if (tray) { e.preventDefault(); mainWindow.hide(); }
+  });
+
   if (IS_DEV) {
     mainWindow.loadURL('http://localhost:5173');
-    mainWindow.webContents.openDevTools();
   } else {
     mainWindow.loadFile(path.join(FRONTEND_DIST, 'index.html'));
   }
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
+// ── 3D Detach penceresi ────────────────────────────────────────────────────
+function createDetachWindow(url) {
+  if (detachWindow && !detachWindow.isDestroyed()) {
+    detachWindow.focus(); return;
+  }
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  detachWindow = new BrowserWindow({
+    width: Math.round(width * 0.7),
+    height: Math.round(height * 0.8),
+    minWidth: 640, minHeight: 480,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+    },
+    frame: false,
+    backgroundColor: '#0A0C0F',
+    title: 'GeoPINN Studio — 3D Viewer',
+    icon: path.join(__dirname, 'build', 'icon.ico'),
+    parent: mainWindow,
+  });
+  Menu.setApplicationMenu(null);
+  // Detach penceresi aynı URL'yi yükler, ?detach=1 param ile 3D moduna geçer
+  if (IS_DEV) {
+    detachWindow.loadURL('http://localhost:5173?detach=1');
+  } else {
+    detachWindow.loadFile(path.join(FRONTEND_DIST, 'index.html'), { query: { detach: '1' } });
+  }
+  detachWindow.on('closed', () => { detachWindow = null; });
+}
+
 app.whenReady().then(async () => {
   const cfg = loadConfig();
   await startBackend(cfg);
   createWindow();
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    else if (mainWindow) { mainWindow.show(); mainWindow.focus(); }
-  });
 
-  // ── Sistem tepsisi ─────────────────────────────────────────────────────────
+  // Sistem tepsisi
   try {
     const iconPath = path.join(__dirname, 'build', 'icon.ico');
     const trayIcon = fs.existsSync(iconPath)
       ? nativeImage.createFromPath(iconPath).resize({ width:16, height:16 })
       : nativeImage.createEmpty();
-
     tray = new Tray(trayIcon);
     tray.setToolTip('GeoPINN Studio 3.0');
-
-    const contextMenu = Menu.buildFromTemplate([
-      { label: 'GeoPINN Studio', enabled: false },
-      { type: 'separator' },
-      { label: 'Pencereyi Göster', click: () => {
-          if (mainWindow) { mainWindow.show(); mainWindow.focus(); mainWindow.restore(); }
-      }},
-      { label: 'Tam Ekran', click: () => {
-          if (mainWindow) { mainWindow.show(); mainWindow.maximize(); }
-      }},
-      { type: 'separator' },
-      { label: 'Çıkış', click: () => {
-          tray = null;
-          if (backendProc) backendProc.kill();
-          app.exit(0);
-      }},
+    const ctxMenu = Menu.buildFromTemplate([
+      { label:'GeoPINN Studio 3.0', enabled:false },
+      { type:'separator' },
+      { label:'Göster', click:()=>{ mainWindow?.show(); mainWindow?.focus(); }},
+      { label:'Tam Ekran', click:()=>{ mainWindow?.show(); mainWindow?.maximize(); }},
+      { type:'separator' },
+      { label:'Çıkış', click:()=>{ tray=null; backendProc?.kill(); app.exit(0); }},
     ]);
-
-    tray.setContextMenu(contextMenu);
-    // Tek tıkla pencereyi göster/gizle
-    tray.on('click', () => {
+    tray.setContextMenu(ctxMenu);
+    tray.on('click', ()=>{
       if (!mainWindow) return;
       if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide();
       else { mainWindow.show(); mainWindow.focus(); }
     });
-  } catch(e) {
-    console.warn('[tray] Sistem tepsisi oluşturulamadı:', e.message);
-  }
+  } catch(e) { console.warn('[tray] oluşturulamadı:', e.message); }
+
+  app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    else mainWindow?.show();
+  });
 });
 
 app.on('window-all-closed', () => {
+  // Panel pencereleri veya tray modu varsa çıkma
+  if (tray) return;  // tray varsa uygulama arka planda devam eder
+  if (panelWindows.size > 0) return;  // panel pencereleri açıksa çıkma
   if (process.platform !== 'darwin') {
     if (backendProc) backendProc.kill();
     app.quit();

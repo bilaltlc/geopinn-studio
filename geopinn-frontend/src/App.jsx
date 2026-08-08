@@ -913,7 +913,7 @@ function StatsPanel({ modelData, colorRange, jiHistory, jiCorrelation, jiSummary
           {label:'P90', value:stats.p90?.toFixed(4), color:C.err},
           {label:'>0.5 Hücre', value:`${stats.above50} / ${stats.n}`, color:C.ok},
         ].map(({label,value,color})=>(
-          <div key={label} style={{background:C.surface,border:`1px solid ${C.border}`,
+          <div key={label} style={{background:C.bg,border:`1px solid ${C.border}`,
                                    borderRadius:6,padding:'8px 10px'}}>
             <div style={{fontSize:9,color:C.textLow,textTransform:'uppercase',letterSpacing:'0.05em'}}>{label}</div>
             <div style={{fontSize:14,fontWeight:700,fontFamily:'monospace',color}}>{value}</div>
@@ -934,7 +934,7 @@ function StatsPanel({ modelData, colorRange, jiHistory, jiCorrelation, jiSummary
         </ResponsiveContainer>
       </div>
 
-      {jiHistory.length > 0 && (
+      {jiHistory?.length > 0 && (
         <div style={{marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:700,color:C.header,marginBottom:6,
                        textTransform:'uppercase',letterSpacing:'0.05em'}}>Yakınsama</div>
@@ -1311,9 +1311,10 @@ function PanelWindowApp() {
       } catch(e) {}
     };
     load();
-    // Ana pencere veri güncellediğinde storage event gelir
+    // storage event + polling (Electron cross-window için)
     window.addEventListener('storage', load);
-    return () => window.removeEventListener('storage', load);
+    const poll = setInterval(load, 3000); // 3sn polling
+    return () => { window.removeEventListener('storage', load); clearInterval(poll); };
   }, []);
 
   const contentMap = {
@@ -1404,7 +1405,8 @@ export default function App() {
   const [results, setResults]=useState({});
 
   // Görünüm
-  const [viewMode, setViewMode]=useState('3d'); // '3d' | 'slice' | 'anomaly' | 'stats'
+  const [viewMode, setViewMode]=useState('3d');
+  const [splitView, setSplitView]=useState(null); // null | 'stats' | 'slice' | 'map' // '3d' | 'slice' | 'anomaly' | 'stats'
   const [engineMode, setEngineMode]=useState('prism'); // 'prism' | 'fvm'
   const [fvmResult, setFvmResult]=useState(null);
   const [fvmRunning, setFvmRunning]=useState(false);
@@ -1592,6 +1594,32 @@ export default function App() {
           desc:'Sağ → Dışa Aktar → CSV (koordinatlar) + PNG (haritalar)\nSondaj lokasyon önerileri için kullan' },
       ]
     },
+    electric: {
+      title: '⚡ IP & SP — Elektrik Yöntemler',
+      items: [
+        { label:'Chargeability > 0.3', color:'#f97316',
+          desc:'Yoğun sülfür mineralizasyonu — pirit, arsenopirit\nBeylikova\'da tipik: pirit zonu m=0.4-0.6\nIP + düşük ρ₀ birlikteliği → güçlü cevher hedefi\nRef: Pelton et al. (1978), Geophysics 43(3)' },
+        { label:'Chargeability < 0.05', color:C.textMid,
+          desc:'Sülfür yok — host kaya veya karbonat\nSedimanter REE olabilir ama IP anomalisi beklenmiyor' },
+        { label:'SP < -80 mV', color:'#a855f7',
+          desc:'Aktif hidrotermal sistem — elektrokinetik akış\nRevil & Leroy (2004): L_ek = -ε₀εᵣζσ/(ηF)\nBeylikova\'da -50 ile -300 mV beklenir' },
+        { label:'SP baskın kaynak', color:'#a855f7',
+          desc:'Elektrokinetik → hidrotermal akışkan hareketi\nElektrokimyasal → masif sülfür (battery model)\nTermoelektrik → radyojenik ısı gradyanı\nRef: Sill (1983), Mendonça (2008)' },
+      ]
+    },
+    fusion: {
+      title: '🔀 Çok-Yöntemli Füzyon',
+      items: [
+        { label:'Fuzzy Gamma γ=0.85', color:C.teal,
+          desc:'Zimmermann & Zysno (1980) — mineral aramada standart\nFuzzy OR^γ × Fuzzy AND^(1-γ)\nγ=1 → OR (liberal), γ=0 → AND (konservatif)\nRef: Bonham-Carter (1994)' },
+        { label:'Bileşik skor > 0.75', color:C.ok,
+          desc:'Yüksek öncelikli sondaj hedefi\nEn az 3-4 yöntemle yapılırsa güvenilir\nRef: Porwal et al. (2003), Nat. Resour. Res.' },
+        { label:'Yöntem korelasyonu', color:C.accent,
+          desc:'Yüksek (>0.7) → aynı kaynaktan besleniyorlar\nDüşük → bağımsız anomali → daha güvenilir\nIP↔SP korelasyonu → sülfür + hidrotermal birlikteliği' },
+        { label:'Index Overlay', color:C.textMid,
+          desc:'Carranza & Hale (2002) — konservatif yöntem\nHer yöntemde eşik aşılmalı (varsayılan > 0.5)\nFalse positive az, false negative fazla' },
+      ]
+    },
   };
 
   // Uncertainty
@@ -1615,7 +1643,7 @@ export default function App() {
   // Joint inversion
   const [jiOpen, setJiOpen]=useState(false);
   const [jiRunning, setJiRunning]=useState(false);
-  const [jiWeights, setJiWeights]=useState({grav:1.0,mag:1.0,csamt:1.0});
+  const [jiWeights, setJiWeights]=useState({grav:1.0,mag:1.0,csamt:1.0,ip:1.0,sp:1.0});
   const [jiIter, setJiIter]=useState(60);
   const [jiHistory, setJiHistory]=useState([]);
   const [jiCorr, setJiCorr]=useState({});
@@ -1839,7 +1867,7 @@ export default function App() {
       })).json();
       setRadResult(d);
       setRightTab('radio');
-      log('ok',`Radyometri tamamlandı — REE olasılık maks: ${d.ree_index?.stats?.max_prob?.toFixed(3)||'—'}`);
+      log('ok',`Radyometri tamamlandı — REE olasılık maks: ${(d.ree_index?.stats?.max_prob??d.ree_index?.stats?.max_prob??0).toFixed(3)}`);
     }catch(e){log('err',`Radyometri hatası: ${e.message}`);}
     finally{setRadRunning(false);}
   };
@@ -2135,21 +2163,18 @@ export default function App() {
           <div style={{ display:'flex', gap:6, alignItems:'center', WebkitAppRegion:'no-drag', marginLeft:'auto' }}>
 
           {/* Hızlı panel açıcılar */}
-          {window.electronAPI && [
-            {id:'slice-float',  label:'KST', w:700, h:560},
-            {id:'stats-float',  label:'İST', w:760, h:560},
-            {id:'map-float',    label:'HRT', w:560, h:580},
-          ].map(({id,label,w,h})=>(
-            <button key={id} onClick={()=>window.electronAPI.openPanelWindow({
-              panelId:id,
-              x:Math.round(window.screenX+120),
-              y:Math.round(window.screenY+90),
-              w, h,
-            })}
-              style={{ padding:'3px 8px', borderRadius:3, border:`1px solid ${C.border}`,
-                background:'rgba(255,255,255,0.06)', color:'rgba(255,255,255,0.5)',
-                fontSize:9, fontWeight:700, letterSpacing:'0.06em',
-                cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+          {[
+            {id:'slice', label:'KST'},
+            {id:'stats', label:'İST'},
+            {id:'map',   label:'HRT'},
+          ].map(({id,label})=>(
+            <button key={id}
+              onClick={()=>setSplitView(v=>v===id?null:id)}
+              style={{ padding:'3px 8px', borderRadius:3,
+                border:`1px solid ${splitView===id?C.teal:C.border}`,
+                background: splitView===id?`${C.teal}20`:'rgba(255,255,255,0.06)',
+                color: splitView===id?C.teal:'rgba(255,255,255,0.5)',
+                fontSize:9, fontWeight:700, letterSpacing:'0.06em', cursor:'pointer' }}>
               {label}
             </button>
           ))}
@@ -2309,7 +2334,8 @@ export default function App() {
             <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, background:C.bg }}>
               {[{id:'workflow',label:'İş Akışı'},{id:'values',label:'Değerler'},
                 {id:'geom',label:'Geometri'},{id:'simpeg',label:'SimPEG'},
-                {id:'radiometry',label:'Radyometri'},{id:'fvm',label:'FVM'}].map(({id,label})=>(
+                {id:'radiometry',label:'Radyometri'},{id:'fvm',label:'FVM'},
+                {id:'electric',label:'IP & SP'},{id:'fusion',label:'Füzyon'}].map(({id,label})=>(
                 <button key={id} onClick={()=>setHelpTopic(id)}
                   style={{ flex:1, padding:'9px 4px', border:'none', cursor:'pointer',
                            fontSize:11, fontWeight:700,
@@ -2564,11 +2590,11 @@ export default function App() {
                 Ortak Ters Çözüm (Adam)
               </div>
 
-              {layerConfig.map(({key,label,color})=>(
-                <RangeRow key={key} label={`${label} ağırlık`} value={jiWeights[key]}
+              {layerConfig.filter(l=>['grav','mag','csamt'].includes(l.key)).map(({key,label,color})=>(
+                <RangeRow key={key} label={`${label} ağırlık`} value={jiWeights[key]??1.0}
                   min={0} max={2} step={0.1}
                   onChange={v=>setJiWeights({...jiWeights,[key]:v})}
-                  format={v=>v.toFixed(1)}/>
+                  format={v=>v?.toFixed(1)??'—'}/>
               ))}
 
               <RangeRow label="İterasyon sayısı" value={jiIter} min={10} max={200} step={5}
@@ -2636,8 +2662,40 @@ export default function App() {
         </aside>
 
         {/* ── Merkez viewer ── */}
-        <main style={{ flex:1, position:'relative', minWidth:0, background: viewBg==='dark'?'#0F172A':'#EFF6FF' }}
+        <main style={{ flex:1, position:'relative', minWidth:0, display:'flex',
+          background: viewBg==='dark'?'#0F172A':'#EFF6FF' }}
           ref={viewerRef}>
+          {/* Split panel */}
+          {splitView && (
+            <div style={{ width:420, flexShrink:0, borderRight:`1.5px solid ${C.border}`,
+              background:C.panel, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+              <div style={{ height:32, background:C.bg, borderBottom:`1px solid ${C.border}`,
+                display:'flex', alignItems:'center', padding:'0 10px', gap:8, flexShrink:0 }}>
+                <span style={{ fontSize:10, fontWeight:700, color:C.teal,
+                  textTransform:'uppercase', letterSpacing:'0.06em' }}>
+                  {splitView==='stats'?'İstatistik':splitView==='slice'?'Kesit':'Harita'}
+                </span>
+                <button onClick={()=>setSplitView(null)}
+                  style={{ marginLeft:'auto', background:'transparent', border:'none',
+                    cursor:'pointer', color:C.textMid, fontSize:14 }}>✕</button>
+              </div>
+              <div style={{ flex:1, overflow:'hidden' }}>
+                {splitView==='stats' && (
+                  <StatsPanel modelData={activeDisplay} colorRange={colorRange}
+                    jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
+                )}
+                {splitView==='slice' && (
+                  <SliceView modelData={activeDisplay} axis={sliceAxis} idx={sliceIdx}
+                    colorRange={colorRange} sweeping={sweeping}/>
+                )}
+                {splitView==='map' && (
+                  <LeafletAnomalyMap modelData={activeDisplay} colorRange={colorRange}/>
+                )}
+              </div>
+            </div>
+          )}
+          {/* 3D Viewer */}
+          <div style={{ flex:1, position:'relative', minWidth:0 }}>
 
           {/* Viewer araç çubuğu */}
           <div style={{ position:'absolute', top:10, left:10, zIndex:30, display:'flex', gap:6 }}>
@@ -2700,6 +2758,7 @@ export default function App() {
             </>
           )}
           {/* Kesit/Harita/İstatistik floating panel olarak açılır */}
+          </div>
         </main>
 
         {/* ── Sağ Panel: dikey ikon rail + içerik ── */}
@@ -2730,7 +2789,7 @@ export default function App() {
           </div>
 
           {/* İçerik alanı */}
-          <div style={{ width:256, background: C.panel,
+          <div style={{ width:320, background: C.panel,
                         display:'flex', flexDirection:'column', flexShrink:0 }}>
 
           {/* Sekme başlığı */}
@@ -3544,8 +3603,19 @@ export default function App() {
               </div>
             )}
             {rightTab==='stats' && (
-              <StatsPanel modelData={activeDisplay} colorRange={colorRange}
-                jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
+              <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
+                {!activeDisplay && (
+                  <div style={{padding:16,color:C.textMid,fontSize:11,lineHeight:1.6,textAlign:'center',marginTop:20}}>
+                    <Activity size={32} style={{opacity:0.2,display:'block',margin:'0 auto 8px'}}/>
+                    Analiz çalıştırın veya<br/>
+                    İST butonuyla ayrı pencerede açın
+                  </div>
+                )}
+                {activeDisplay && (
+                  <StatsPanel modelData={activeDisplay} colorRange={colorRange}
+                    jiHistory={jiHistory} jiCorrelation={jiCorr} jiSummary={jiSummary}/>
+                )}
+              </div>
             )}
             {rightTab==='filter' && (
               <div style={{padding:12}}>
@@ -3578,14 +3648,14 @@ export default function App() {
           </div>
 
           {/* Log konsolu */}
-          <div style={{ height:180, borderTop:`1px solid ${C.border}`, display:'flex', flexDirection:'column' }}>
-            <div style={{ padding:'5px 10px', background: C.header, display:'flex', alignItems:'center', gap:5 }}>
-              <AlertCircle size={11} color={C.accentL}/>
-              <span style={{fontSize:10,fontWeight:700,color:'rgba(255,255,255,0.8)',
+          <div style={{ height:110, borderTop:`1px solid ${C.border}`, display:'flex', flexDirection:'column' }}>
+            <div style={{ padding:'3px 10px', background: C.header, display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+              <AlertCircle size={10} color={C.accentL}/>
+              <span style={{fontSize:9,fontWeight:700,color:'rgba(255,255,255,0.7)',
                             textTransform:'uppercase',letterSpacing:'0.06em'}}>Log</span>
             </div>
-            <div style={{ flex:1, overflowY:'auto', background:'#0F172A', padding:'6px 8px',
-                          fontFamily:'monospace', fontSize:10, lineHeight:1.6 }}>
+            <div style={{ flex:1, overflowY:'auto', background:'#0F172A', padding:'4px 8px',
+                          fontFamily:'monospace', fontSize:9, lineHeight:1.5 }}>
               {logs.map((l,i)=>(
                 <div key={i} style={{ display:'flex', gap:6 }}>
                   <span style={{color:'#475569',flexShrink:0}}>{l.t}</span>
