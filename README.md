@@ -9,9 +9,9 @@
  ╚═════╝ ╚══════╝ ╚═════╝ ╚═╝     ╚═╝╚═╝  ╚═══╝╚═╝  ╚═══╝
 ```
 
-**STUDIO 3.0** — Applied Geophysics Suite
+**v4.0 BETA** — Applied Geophysics Suite
 
-*Gravity · Magnetics · CSAMT · Radiometry · Heat Flow · FVM*
+*Gravity · Magnetics · CSAMT · IP · SP · Radiometry · Heat Flow · FVM · GeoUNet*
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.12-blue.svg)](https://python.org)
@@ -25,48 +25,69 @@
 
 ## Overview
 
-GeoPINN Studio is a desktop application for 3D geophysical forward modelling, joint inversion, and mineral exploration analysis. Built for REE-F-Ba-Th deposit exploration (Beylikova analogue), it integrates multiple geophysical methods in a unified GPU-accelerated environment.
+GeoPINN Studio is a desktop application for 3D geophysical forward modelling, joint inversion, and mineral exploration analysis — now with **GeoUNet learned inversion** (surrogate neural network). Built for REE-F-Ba-Th deposit exploration (Beylikova analogue), it integrates multiple geophysical methods in a unified GPU-accelerated environment.
 
 **Architecture:** React + Three.js frontend · FastAPI backend · PyTorch GPU engines · Colab/local deployment
 
 ---
 
-## v3.1.1 — What's New
+## v4.0 BETA — What's New
 
 | Feature | Details |
 |---------|---------|
-| **IP Forward Engine** | Cole-Cole complex resistivity, dipole-dipole pseudosection (Pelton 1978) |
-| **SP Forward Engine** | Electrokinetic + thermoelectric + electrochemical coupling (Revil 2004) |
-| **Data Fusion** | 7-method composite anomaly — Fuzzy Gamma, weighted, AND/OR, index overlay |
-| **Split View** | IST/KST/HRT panels beside 3D viewer — shared React state, no black screen |
-| **Electric Tab** | IP & SP toggle panel with Cole-Cole sliders and result cards |
-| **Fusion Tab** | 7-method selector, priority zone detection, correlation matrix |
-| **Updated Guide** | IP & SP, Fusion tabs with academic references |
-| **Prizma Katman Logo** | Custom GP monogram icon, frameless Electron titlebar |
+| **GeoUNet PINN** | ObsEncoder-2DCNN + 3D U-Net · IoU=0.57 · ~0.03s GPU inference |
+| **Learned Inversion** | gz+mag anomaly maps → 3D ore geometry · non-iterative |
+| **3D Popup Modal** | 82vw×82vh floating viewer — no longer fixed center |
+| **Center Grid** | 2×2 nav cards: 3D Model / İstatistik / Kesit / Anomali Haritası |
+| **Panel Resize** | Left/right panels draggable (200–560px range) |
+| **Dark Mode Fix** | ColorBar, overlays, radyometri panel fully theme-aware |
+| **Slice Color Fix** | P2–P98 percentile normalization — no more white saturation |
+| **Workflow** | 8-step guide including GeoUNet and Binary Mask steps |
+| **Colab Notebook** | Drive-based, no GitHub clone required |
 
 ---
 
 ## Screenshots
 
-### Split View — İstatistik + 3D Viewer
-![Split Stats](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_stats.png)
-*İST butonu — istatistik paneli 3D viewer yanında, aynı React state paylaşıyor*
+### v4.0 — Ana Ekran (Merkez Navigasyon Kartları)
+![Home Grid](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_merkez_grid_home.png)
+*2×2 navigasyon kartları — 3D Model / İstatistik / Kesit / Anomali Haritası*
 
-### Split View — Leaflet Harita + 3D
-![Split Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_map.png)
-*HRT butonu — Beylikova REE anomalisi OSM üzerinde, 3D model yanında*
+### v4.0 — GeoUNet 3D Popup (Y→Forward)
+![3D Popup Y Forward](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_geounet_y_forward.png)
+*Y_beylikova_vein_32x32x32 · Y→Forward mod · İki ayrı cevher gövdesi · Cevher hacmi: 6.77 Mm³*
 
-### Split View — Kesit + 3D
-![Split Slice](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_split_slice.png)
-*KST butonu — Z derinlik kesiti ve 3D izoyüzey eş zamanlı*
+### v4.0 — GeoUNet 3D Popup (X Dosyası)
+![3D Popup X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_geounet_x_dosyasi.png)
+*X_mag_grav.npy · Gerçek anomali verisi · Damar şekli · Cyan-mor renk skalası*
 
-### Leaflet Anomali Haritası — OSM Üzerinde
-![Leaflet Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_map.png)
-*Beylikova REE alanı · OSM tile + ImageOverlay · mavi→yeşil→sarı→kırmızı skalası*
+### v4.0 — Binary Mask 3D (Joint Inversion)
+![Binary Mask 3D](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_binary_mask.png)
+*Threshold=0.35 üstü vokseller · Binary mask görünümü · Cevher fraksiyonu: %10.8*
 
-### Kesit Görünümü (Z ekseni)
-![Slice Z](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_leaflet_slice2.png)
-*Z=5 derinlik kesiti · viridis renk skalası · 16³ grid*
+### v4.0 — GeoUNet PINN Paneli + Anomali Haritası
+![PINN Panel + Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_pinn_panel.png)
+*HRT modu açık · Checkpoint yüklü (22.2 MB, CUDA) · X_mag_grav.npy anomali overlay · Beylikova koordinatları*
+
+### v4.0 — İstatistik Paneli + PINN Sonuçları
+![Statistics PINN](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_istatistik_panel_pinn.png)
+*İST modu · Ortalama: 0.066 · P90: 0.079 · >0.5 hücre: 1925/32768 · %6.7 fraksiyon*
+
+### v4.0 — Kesit Görünümü (GeoUNet Y→Forward)
+![Slice Y Forward](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_geounet_y_forward.png)
+*KST modu · Z kesiti · İki ayrı cevher bloğu · Viridis renk skalası · P2-P98 normalize*
+
+### v4.0 — Kesit Görünümü (X Dosyası)
+![Slice X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_geounet_x_dosyasi.png)
+*X_mag_grav anomali verisi · Dairesel yüksek anomali bölgesi · Cevher hacmi: 12.50 Mm³*
+
+### v4.0 — Anomali Haritası (X Dosyası)
+![Anomali Map X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_x_dosyasi.png)
+*HRT modu · OSM tile + GeoUNet tahmin overlay · Beylikova 39°55N 31°40E*
+
+### v4.0 — Binary Mask Anomali Haritası
+![Binary Mask Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_binary_mask.png)
+*Binary Mask → Harita · Threshold=0.35 üstü alan kırmızı · P2-P95 renk normalize*
 
 ### IP — Cole-Cole Pseudosection
 ![IP Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_ip_panel.png)
@@ -78,27 +99,44 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ### Füzyon — 7 Yöntem Bileşik Anomali
 ![Fusion Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_fusion_panel.png)
-*Fuzzy Gamma γ=0.85 · Bileşik maks: 1.000 · Bölge 1 skor: 1.000 · 4 aktif yöntem*
-
-### Rehber — IP & SP Sekmeleri
-![Guide IP SP](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_guide_ip_sp.png)
-*Pelton (1978), Revil & Leroy (2004), Sill (1983) referanslı jeolojik yorum kılavuzu*
-
-### SimPEG Tikhonov Inversion Sonuçları
-![SimPEG Results](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_simpeg_results.png)
-*Δρ: 10.9 kg/m³ · χ: 7.09e-4 SI · Gravite + Manyetik split section*
+*Fuzzy Gamma γ=0.85 · Bileşik maks: 1.000 · 4 aktif yöntem*
 
 ### Joint Inversion — Ters Çözüm
 ![Joint Inversion](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_joint_inversion.png)
-*Misfit: 100.279 → 0.2405 · RMSE: 0.0636 · 16³ grid · 150 iter*
+*Misfit: 100.279 → 0.2405 · RMSE: 0.0636 · 16³ grid · Adam + autograd*
 
-### Belirsizlik Analizi (UQ)
-![UQ Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_uq_panel.png)
-*5 realizasyon · %3 gürültü · Yüksek güven: %100 · RMSE: 0.0643*
+---
 
-### Radyometri & Isı Akışı
-![Radiometry](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_3d_radiometry2.png)
-*U/Th/K → Th/U: 4.00 · TC: 56.8 cps · Ort. ısı akışı: -140629 mW/m²*
+## GeoUNet — Learned Inversion
+
+**Architecture**
+```
+Input: gz(21×21 mGal) + mag(21×21 nT)  →  resize 32×32
+ObsEncoder:  Conv2d(2→32→64) + Conv2d(64, 64×g, 1) → view(B,64,32,32,32)
+Encoder:     e1(64→32) → e2(32→64) → e3(64→128)  [MaxPool3d×3]
+Bottleneck:  bot(128→256)
+Decoder:     u3+d3 → u2+d2 → u1+d1  [ConvTranspose3d + skip concat]
+Output:      Conv3d(32→1) + Sigmoid  →  (B, 32, 32, 32)
+Norm:        GroupNorm(min(8,ch)) + GELU
+```
+
+**Training**
+```
+Data:       make_vein() synthetic vein geometry (32³ grid, seed=42)
+Loss:       MSE + 0.5×Dice + 0.01×Laplacian + 0.005×TV
+Optimizer:  AdamW · CosineAnnealingLR · grad_clip=1.0
+Epochs:     204  · val_iou=0.5703  · val_mae=0.0221
+Platform:   Kaggle T4 GPU
+```
+
+**Normalization (must match training)**
+```
+gz  / 5.97×10⁻⁷   (training std, grav_fwd output)
+mag / 6.73×10⁻²   (training std, mag_fwd output)
+```
+
+**Industry terminology:** Surrogate inversion network / learned geophysical inversion / non-iterative forward-trained inverse model.
+Ref: Wu & McMechan (2019), Sun & Demanet (2020)
 
 ---
 
@@ -107,7 +145,7 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 ### Forward Modelling
 | Engine | Method | Backend | GPU |
 |--------|--------|---------|-----|
-| `gravity_prism.py` | Nagy analytic | PyTorch | ✓ |
+| `gravity_prism.py` | Nagy analytic kernel | PyTorch | ✓ |
 | `magnetic_prism.py` | Bhattacharyya TMI | PyTorch | ✓ |
 | `csamt_1d.py` | Wait recursion MT | PyTorch | ✓ |
 | `gravity_fvm.py` | Poisson FVM (∇²U=4πGρ) | scipy.sparse | — |
@@ -117,152 +155,106 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 | `ip_forward.py` | Cole-Cole IP, dipole-dipole | PyTorch | ✓ |
 | `sp_forward.py` | Electrokinetic + thermoelectric SP | numpy | — |
 | `data_fusion.py` | 7-method composite anomaly | numpy/scipy | — |
+| `pinn_stub.py` | **GeoUNet 3D U-Net inference** | PyTorch | ✓ |
 
 ### Inversion
 | Method | Algorithm | Notes |
 |--------|----------|-------|
+| **GeoUNet** | 3D U-Net (learned) | gz+mag → 3D model · ~0.03s GPU |
 | Joint Inversion | Adam + autograd | Grav + Mag + CSAMT simultaneous |
-| SimPEG Tikhonov | Gauss-Newton + adjoint | L2 regularization, sensitivity matrix |
+| SimPEG Tikhonov | Gauss-Newton + adjoint | L2 regularization |
 | Uncertainty (UQ) | Monte Carlo | n_realizations, CV/P10/P50/P90 |
 
-### Petrophyics (Beylikova REE Analogue)
+### Petrophysics (Beylikova REE Analogue)
 ```
-ρ(x) = 2.70 + 2.00 × f(x)      [g/cm³]   density
-χ(x) = 1e-4 + 3e-4 × f(x)      [SI]      susceptibility  
-ρₑ(x) = 500 × 0.10^f(x)        [Ω·m]     resistivity
+ρ(x)  = 2.70 + 2.00 × f(x)      [g/cm³]   density
+χ(x)  = 1e-4 + 3e-4 × f(x)      [SI]      susceptibility
+ρₑ(x) = 500 × 0.10^f(x)         [Ω·m]     resistivity
 Q(x)  = ρ·(9.52e-5·U + 2.56e-5·Th + 3.48e-6·K)  [W/m³]  heat production
 ```
 
 ---
 
-## Workflow — Beylikova REE Exploration
+## Workflow — v4.0 Beylikova REE Exploration
 
 ```
-① Geometry Generator
-   └─ Beylikova Vein type · dip=60° · depth=30-400m · width=60m
+① Load Data / Generate Geometry
+   └─ .npy upload (Y model cube / X anomaly maps) or Geometry Generator
         ↓
-② Forward Modelling  
-   └─ Gravity + Magnetics (GPU) · engine: Prism or FVM
+② Forward Modelling
+   └─ Gravity + Magnetics (GPU) · Prism analytic or FVM
         ↓
-③ Radiometry & Heat Flow
-   └─ U/Th/K → Th/U ratio → REE alteration index → surface heat flux
+③ GeoUNet Inference  ◄─── NEW in v4.0
+   └─ Y→Forward or X file · threshold 0.35-0.45 · ~0.03s · 32³ output
         ↓
-④ Joint Inversion
-   └─ Adam optimizer · 150 iter · 16³-64³ grid · Grav+Mag+CSAMT
+④ IP / SP / Radiometry
+   └─ Cole-Cole chargeability · SP electrokinetic · Th/U REE index
         ↓
-⑤ Uncertainty Analysis  
-   └─ 8 realizations · 5% noise · CV map · high-confidence zones
+⑤ Joint Inversion
+   └─ Adam optimizer · 60 iter · 32³ grid · Grav+Mag+CSAMT
         ↓
-⑥ FVM Validation
-   └─ Prism vs FVM RMSE · boundary effect check
+⑥ Fusion + Uncertainty
+   └─ Fuzzy Gamma 7-method · CV map · high-confidence zones
         ↓
-⑦ Export
+⑦ 3D Visualize (Popup)
+   └─ Isosurface · Binary Mask · opacity/threshold sliders
+        ↓
+⑧ Export
    └─ CSV (model points) · PNG (anomaly maps)
 ```
 
 ---
 
-## FVM Results (v3.1.x)
-
-Benchmark on `Y_beylikova_vein_32x32x32.npy` (32³ grid):
-
-| Method | RMSE | Max Diff | Rel. RMSE | Time |
-|--------|------|----------|-----------|------|
-| **Gravity** (mGal) | 0.0126 | 0.0257 | 5.29% | Prism: 0.148s · FVM: 7.245s |
-| **Magnetics** (nT) | 1.6218 | 7.5073 | 101.62% | Prism: 0.211s · FVM: 0.686s |
-
-> Magnetic FVM divergence (101%) is expected — FVM uses scalar potential approximation (∇²φ=∇·M) vs Bhattacharyya full tensor. Domain boundary effects dominate for thin vein geometries. Gravity FVM at 5.29% is within acceptable range.
-
----
-
 ## Installation
 
-### Prerequisites
+### Option 1 — Electron Desktop (Local)
 ```bash
 # Backend
-pip install fastapi uvicorn numpy scipy torch pyngrok
-pip install simpeg discretize          # optional — SimPEG inversion
-pip install harmonica verde            # optional — validation
-
-# Frontend
-npm install
-```
-
-### Run (Development)
-```bash
-# 1. Start backend (local or Colab)
 cd geopinn-backend
+pip install fastapi uvicorn numpy scipy torch python-multipart
 uvicorn server:app --host 127.0.0.1 --port 8000
 
-# 2. Start frontend
+# Frontend
 cd geopinn-frontend
-npm run dev
+npm install
+npm run dev        # development
+npm run dist       # package .exe
 ```
 
-### Run on Google Colab (GPU)
+### Option 2 — Google Colab GPU
+1. Open `geopinn-backend/GeoPINN_Studio_Colab.ipynb` in Colab
+2. Runtime → Change runtime type → **T4 GPU**
+3. Run cells 1–6 in order
+4. Cell 5: upload `server.py` + all `engines/*.py` files
+5. Cell 6: upload `geopinn_unet_best_32.pt` to backend root
+6. Copy the ngrok URL → GeoPINN Studio Settings → Colab URL
+
+### GPU Detection (Local)
 ```python
-# In Colab notebook:
-!pip install fastapi uvicorn pyngrok simpeg discretize
-from pyngrok import ngrok
-ngrok.set_auth_token("YOUR_TOKEN")
-# Run Server Başlat cell → copy ngrok URL → paste in app Settings
+import torch
+print(torch.cuda.is_available())   # True if GPU detected
+print(torch.cuda.get_device_name(0))
 ```
-
-### Build Desktop App (Windows)
-```bash
-cd geopinn-frontend
-npm run dist
-# Output: dist-electron/GeoPINN Studio-win.zip
-```
-
----
-
-## API Endpoints
-
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/health` | GET | Server status |
-| `/api/run-physics-engine` | POST | Forward modelling (prism/fvm) |
-| `/api/joint-inversion` | POST | Adam joint inversion |
-| `/api/uncertainty` | POST | Monte Carlo UQ |
-| `/api/simpeg/inversion` | POST | SimPEG Tikhonov L2 |
-| `/api/fvm/compare` | POST | Prism vs FVM benchmark |
-| `/api/radiometry/forward` | POST | U/Th/K → gammaray + heat flow |
-| `/api/generate-geometry` | POST | Synthetic geometry generator |
-| `/api/analyses` | GET/POST/DELETE | Analysis history |
-| `/api/data/list` | GET | Dataset management |
-
-Full API docs: `http://localhost:8000/docs`
-
----
-
-## Data Formats
-
-| Format Key | Extensions | Columns |
-|-----------|-----------|---------|
-| `model_npy` | `.npy` | GeoPINN 3D grid |
-| `radiometry_csv` | `.csv .xyz .dat` | x, y, U_ppm, Th_ppm, K_pct |
-| `sp_csv` | `.csv .dat` | x, y, SP_mV |
-| `ip_csv` | `.csv .dat` | x_mid, depth, chargeability_ms, resistivity_ohmm |
-| `seismic_refrac_csv` | `.csv .dat` | offset_m, tt_ms |
-| `grav_csv` | `.csv .dat` | x, y, gz_mGal |
-| `mag_csv` | `.csv .dat` | x, y, TMI_nT |
 
 ---
 
 ## Roadmap
 
-### v3.1.0
-- [ ] `data_fusion.py` — multi-method composite anomaly score (Co-kriging)
-- [ ] IP forward engine — Cole-Cole complex resistivity
-- [ ] SP forward engine — electrokinetic coupling (∇²V = ∇·(L·∇T))
-- [ ] Field data gridding — irregular → regular (RBF interpolation)
+### v4.1
+- [ ] 64³ GeoUNet retrain (higher IoU target)
+- [ ] CSAMT channel in GeoUNet input
+- [ ] IP/SP field data CSV → 3D grid (RBF interpolation)
+- [ ] GeoTIFF / Shapefile export (QGIS integration)
 
-### v4.0.0 — PINN Integration
-- [ ] Physics-Informed Neural Networks — PDE loss (Laplace/Poisson)
-- [ ] PyTorch autograd physics layer (`physics_eqs.py`)
-- [ ] Multi-method PINN joint inversion
-- [ ] Transfer learning: synthetic → real field data
+### v4.2
+- [ ] Docker CPU backend (`docker-compose up`)
+- [ ] `pip install geopinn` Python package
+- [ ] Benchmark test suite (GitHub Actions)
+
+### v5.0
+- [ ] Modal.com GPU cloud integration
+- [ ] Physics-Informed loss (PDE residual in training)
+- [ ] 2.5D CSAMT forward operator
 
 ---
 
@@ -270,52 +262,16 @@ Full API docs: `http://localhost:8000/docs`
 
 ```bibtex
 @software{geopinn_studio_2026,
-  title   = {GeoPINN Studio: Applied Geophysics Desktop Suite},
-  version = {3.0.0.1},
+  title   = {GeoPINN Studio: Applied Geophysics Desktop Suite with GeoUNet Learned Inversion},
+  version = {4.0.0-beta},
   year    = {2026},
   url     = {https://github.com/bilaltlc/geopinn-studio},
-  note    = {Beylikova REE-F-Ba-Th exploration analogue}
+  note    = {Beylikova REE-F-Ba-Th exploration analogue · GeoUNet val_iou=0.5703}
 }
 ```
-
----
-
-
----
-
-## Known Limitations & Future Work
-
-### 1. Hyperparameter Sensitivity
-The regularization weight `reg_lambda` and per-method weights (gravity/magnetics/CSAMT) require manual tuning. Small increases in `reg_lambda` can degrade misfit and RMSE rapidly, indicating sensitivity to loss term balance.
-
-**Planned fix (v3.1):** Adaptive Loss Balancing (GradNorm or uncertainty weighting) — automatic per-method weight adjustment during joint inversion.
-
-### 2. Computational Cost at High Resolution
-At `32³` or higher grid resolution, inversion time increases significantly. GPU memory management (PyTorch CUDA) must be stable end-to-end for large field datasets. FVM solver (scipy.sparse CG) is CPU-only and scales poorly beyond `32³`.
-
-**Planned fix (v3.1):** GPU-accelerated sparse solver option; adaptive grid refinement (coarse → fine).
-
-### 3. Geological Validation Gap
-Current mass (20.7 Mt) and volume (36.5 Mm³) estimates are mathematically convergent but have not been cross-validated against:
-- Known geological cross-sections of the Beylikova area
-- Drill-hole data (lithology, assay)
-- Published REE deposit analogues (Bayan Obo, Mountain Pass)
-
-**For academic use:** Results should be treated as forward-model-consistent estimates, not ground-truth reserves. Systematic validation against borehole data is required before any resource classification.
-
-### 4. 1D CSAMT Assumption
-The CSAMT engine (`csamt_1d.py`) uses a 1D layered earth model (Wait recursion). Real CSAMT data in structurally complex terrains (fault zones, steeply dipping veins) will show 2D/3D effects not captured by 1D inversion.
-
-**Planned fix (v4.0):** 2.5D CSAMT forward operator integrated with PINN framework.
 
 ---
 
 ## License
 
 MIT License — see [LICENSE](LICENSE)
-
----
-
-<div align="center">
-<sub>GeoPINN Studio · Applied Geophysics · telcihamdibilal@gmail.com</sub>
-</div>

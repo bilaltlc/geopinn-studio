@@ -1,3 +1,56 @@
+## [v4.0.0-beta] — 2026-08-11
+
+### 🧠 GeoUNet PINN Entegrasyonu (Ana Özellik)
+
+**Surrogate inversion network — öğrenilmiş ters çözüm**
+
+- `engines/pinn_stub.py` — GeoUNet 3D U-Net implementasyonu (checkpoint'e birebir eşleşen mimari)
+  - ObsEncoder: Conv2d(2→32→64) + Conv2d(64, 64×g, 1) → view(B,64,32,32,32)
+  - Encoder: e1/e2/e3 (CB: Conv3d + GroupNorm + GELU ×2)
+  - Bottleneck + decoder: u3/d3, u2/d2, u1/d1 skip connections
+  - Normalizasyon: gz/5.97e-7, mag/6.73e-2 (eğitim pipeline ile birebir)
+  - Giriş resize: 21×21 → 32×32 bilinear (server forward grid uyumu)
+  - `strict=True` yükleme — missing/unexpected key yok
+- `/api/pinn/status` GET — checkpoint boyutu, cihaz, IoU, mimari
+- `/api/pinn/infer` POST — X_mag_grav veya Y self-forward giriş, (32³) geometri + binary mask
+- PINN sekmesi (sağ panel) — checkpoint durum kartı, gözlem kaynağı seçimi, threshold slider
+- Sol panel — GeoUNet Inference butonu, checkpoint durumu badge
+- Colab notebook — Drive tabanlı, GitHub clone yok, Cell 4-5 upload sistemi
+- Performans: ~0.03s/örnek (CUDA T4), ~0.1s (CPU)
+- val_iou: 0.5703 · val_mae: 0.0221 · epoch: 204
+
+### 🎨 UX / Arayüz
+
+- **3D görüntüleyici popup modal sistemi** — 3D artık sabit merkez değil, butona basınca açılan 82vw×82vh modal
+- Merkez alan: 2×2 grid (3D Model / İstatistik / Kesit / Harita) — her biri butonla açılıyor
+- Header view sekmeleri: 3D / KST / HRT / İST — ilgili paneli doğrudan açıyor
+- Header aktif view göstergesi — hangi panel açık olduğu belirtiliyor
+- Karanlık mod renk fix — ColorBar, koordinat overlay, toolbar butonları `C.surface/C.text` kullanıyor
+- ColorBar min===max guard — tek değer durumunda gradient bozulması engellendi
+- Sağ panel `overflowX:hidden` — yatay taşma önlendi
+- Light theme panel rengi `#FFFFFF` — koyu arkaplan sorunu giderildi
+
+### 🔧 Altyapı
+
+- `pinn_stub.py` geriye dönük uyumluluk korundu — `PINN_STUB_OK`, `PINN_AVAILABLE`, `pinn_forward_stub`
+- `server.py` — `PinnInferRequest` model, `PINN_AVAILABLE` flag, import zinciri
+- Colab notebook — Drive mount fallback, checkpoint doğru yere (backend kökü) kopyalanıyor
+
+### 📋 v4.0 Roadmap
+
+- [ ] 64³ grid yeniden eğitim (daha yüksek IoU hedefi)
+- [ ] CSAMT kanalı GeoUNet girişine ekleme
+- [ ] IP/SP saha verisi CSV → 3D grid (RBF interpolasyon)
+- [ ] GeoTIFF/Shapefile dışa aktarma
+- [ ] Docker CPU backend (`docker-compose up`)
+- [ ] `pip install geopinn` Python paketi
+- [ ] Benchmark test suite (GitHub Actions)
+- [ ] Modal.com GPU cloud entegrasyonu
+
+---
+
+---
+
 ## [v3.1.1] — 2026-08-08
 
 ### Düzeltmeler
