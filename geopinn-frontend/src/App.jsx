@@ -5,7 +5,7 @@ import {
   FolderOpen, Download, Filter, Map, BarChart2, Play, Maximize2, Minimize2,
   Eye, EyeOff, Settings, RefreshCw, AlertCircle, CheckCircle, Info,
   Grid, Sliders, Mountain, FileText
-, Zap, GitMerge } from 'lucide-react';
+, Zap, GitMerge, BrainCircuit } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, AreaChart, Area, BarChart, Bar
@@ -197,19 +197,19 @@ const THEMES = {
     purple:   '#8B5CF6',
   },
   light: {
-    bg:       '#F2F4F7',
+    bg:       '#F5F6FA',
     surface:  '#FFFFFF',
-    panel:    '#EAECF0',
-    border:   '#CDD2DC',
-    borderStr:'#A8B0C0',
+    panel:    '#FFFFFF',
+    border:   '#DDE1EA',
+    borderStr:'#B8C0D0',
     header:   '#0D1117',
     accent:   '#C47A10',
     accentL:  '#E09030',
     teal:     '#1A7A96',
     tealL:    '#3A9AB8',
-    text:     '#0D1117',
-    textMid:  '#3A4252',
-    textLow:  '#6B7488',
+    text:     '#1A1F2E',
+    textMid:  '#4A5268',
+    textLow:  '#7A839A',
     ok:       '#1A8A52',
     warn:     '#B86A00',
     err:      '#B82020',
@@ -399,18 +399,18 @@ function ColorBar({ vmin = 0, vmax = 1, label = 'Değer', horizontal = false }) 
   return (
     <div style={{ position:'absolute', bottom:16, right:16, zIndex:20,
                   display:'flex', flexDirection:'column', alignItems:'center', gap:4,
-                  background:'rgba(255,255,255,0.92)', border:`1px solid ${C.border}`,
-                  borderRadius:6, padding:'8px 10px', boxShadow:'0 2px 8px rgba(0,0,0,0.12)' }}>
+                  background: C.surface, border:`1px solid ${C.border}`,
+                  borderRadius:6, padding:'8px 10px', boxShadow:'0 4px 16px rgba(0,0,0,0.25)' }}>
       <span style={{ fontSize:9, color: C.textMid, textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:700 }}>{label}</span>
       <div style={{ display:'flex', gap:6, alignItems:'stretch' }}>
         <div style={{ display:'flex', flexDirection:'column', justifyContent:'space-between',
-                      fontSize:9, fontFamily:'monospace', color: C.textMid, textAlign:'right' }}>
+                      fontSize:9, fontFamily:'monospace', color: C.text, textAlign:'right' }}>
           <span>{vmax.toFixed(3)}</span>
           <span>{((vmin+vmax)/2).toFixed(3)}</span>
           <span>{vmin.toFixed(3)}</span>
         </div>
-        <div style={{ width:14, height:100, background:grad, borderRadius:3,
-                      border:`1px solid ${C.border}` }} />
+        <div style={{ width:14, height:100, background: vmin===vmax ? scalarToCSSColor(0.5) : grad,
+                      borderRadius:3, border:`1px solid ${C.border}` }} />
       </div>
     </div>
   );
@@ -559,7 +559,19 @@ function SliceView({ modelData, axis, idx, colorRange, sweeping }) {
   useEffect(() => {
     if (!modelData?.length) return;
     const n=modelData.length, i=Math.min(idx,n-1);
-    const vmin=colorRange?.min??0, vmax=colorRange?.max??1;
+    // Slice'daki gerçek veri aralığını hesapla (colorRange yerine)
+    const sliceVals=[];
+    for (let row=0;row<n;row++) for (let col=0;col<n;col++) {
+      const ri=n-1-row;
+      let v;
+      if (axis==='z')      v=modelData[col]?.[ri]?.[i]??0;
+      else if (axis==='y') v=modelData[col]?.[i]?.[ri]??0;
+      else                 v=modelData[i]?.[col]?.[ri]??0;
+      sliceVals.push(v);
+    }
+    sliceVals.sort((a,b)=>a-b);
+    const vmin=sliceVals[Math.floor(sliceVals.length*0.02)]??0;
+    const vmax=sliceVals[Math.floor(sliceVals.length*0.98)]??1;
     const off=document.createElement('canvas');
     off.width=n; off.height=n;
     const ctx=off.getContext('2d');
@@ -697,6 +709,8 @@ function LeafletAnomalyMap({ modelData, colorRange, center=[39.92, 31.67] }) {
       if (mapObjRef.current) return;
       const L = window.L;
       const map = L.map(mapRef.current, { center, zoom: 14, zoomControl: true });
+      // Leaflet kontrollerini modal z-index'in altında tut
+      map.getContainer().style.zIndex = '10';
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© <a href="https://openstreetmap.org">OSM</a>',
         maxZoom: 18, opacity: 0.65,
@@ -725,7 +739,15 @@ function LeafletAnomalyMap({ modelData, colorRange, center=[39.92, 31.67] }) {
     if (layerRef.current) { map.removeLayer(layerRef.current); layerRef.current=null; }
 
     const n = modelData.length;
-    const vmin = colorRange?.min??0, vmax = colorRange?.max??1;
+    // P2-P98 ile saturasyon önle — binary mask ve yüksek değerli veriler için
+    const _lv=[];
+    for (let r=0;r<n;r++) for (let c=0;c<n;c++) {
+      let mx=0; for (let z=0;z<n;z++) mx=Math.max(mx,modelData[c]?.[n-1-r]?.[z]??0);
+      _lv.push(mx);
+    }
+    _lv.sort((a,b)=>a-b);
+    const vmin=_lv[Math.floor(_lv.length*0.02)]??0;
+    const vmax=Math.max(_lv[Math.floor(_lv.length*0.95)]??1, vmin+1e-6);
     const cv = document.createElement('canvas'); cv.width=n; cv.height=n;
     const ctx = cv.getContext('2d');
     const img = ctx.createImageData(n,n);
@@ -1444,6 +1466,13 @@ export default function App() {
   });
   // Elektrik sekme toggle
   const [elecTab, setElecTab]=useState('ip');
+  // Sismik
+  const [seismicResult, setSeismicResult]=useState(null);
+  const [seismicRunning, setSeismicRunning]=useState(false);
+  const [seismicAvailable, setSeismicAvailable]=useState(null);
+  const [seismicParams, setSeismicParams]=useState({vp_host:2500, vp_ore:4500, noise_pct:2});
+  // Export geo
+  const [exportGeoAvailable, setExportGeoAvailable]=useState(null);
 
   const [radParams, setRadParams]=useState({
     u_bg:3.0, u_ore:15.0, th_bg:12.0, th_ore:60.0,
@@ -1578,20 +1607,41 @@ export default function App() {
       ]
     },
     workflow: {
-      title: '📋 Beylikova REE Arama Akışı',
+      title: '📋 v4.0 Beylikova REE Arama Akışı',
       items: [
-        { label:'① Geometri Oluştur',  color:C.teal,
-          desc:'Sağ panel → Geometri → "Hidrotermal Damar" seç\ndip=60°, üst=30m, alt=380m, genişlik=60m → Oluştur' },
-        { label:'② Forward Modelleme', color:C.accent,
-          desc:'Sol panel → Gravite + Manyetik aktif → Analizi Başlat\nHarita sekmesinde anomali dağılımını gör' },
-        { label:'③ Radyometri',        color:'#D97706',
-          desc:'Sağ panel → Radyometri → parametreleri ayarla → Hesapla\nTh/U haritası + ısı akışı → REE hedef skoru' },
-        { label:'④ Joint Inversion',   color:C.purple,
-          desc:'Sol → Ters Çözüm → Grav+Mag+CSAMT → 32³ grid → 60 iter\nMisfit yakınsama grafiğini izle' },
-        { label:'⑤ Belirsizlik',       color:C.ok,
-          desc:'Sağ → Belirsizlik → 8 realizasyon → %5 gürültü\nCV<0.3 = güvenilir hedef bölgesi' },
-        { label:'⑥ Dışa Aktar',       color:C.textMid,
-          desc:'Sağ → Dışa Aktar → CSV (koordinatlar) + PNG (haritalar)\nSondaj lokasyon önerileri için kullan' },
+        { label:'① Geometri / Veri Yükle', color:C.teal,
+          desc:'Sol panel → Veri sekmesi → .npy dosyası yükle\nY: 3D model küpü · X: anomali haritaları (grav/mag, CSAMT)\nYoksa: Sağ → Geometri → Hidrotermal Damar oluştur' },
+        { label:'② Forward + Analiz',     color:C.accent,
+          desc:'Sol → Katmanlar → Gravite + Manyetik aktif → Analizi Başlat\nMerkez → İstatistik veya Anomali Haritası kartına tıkla\nForward motor: Prizma tabanlı (Nagy/Bhattacharyya)' },
+        { label:'③ GeoUNet Inference',    color:'#818cf8',
+          desc:"Sol → GeoUNet Inference butonu (PINN sekmesi açılır)\nGözlem kaynağı: Y→Forward (sentetik) veya X Dosyası (gerçek)\nThreshold 0.35-0.45 önerilir · Sonuç: 3D cevher geometrisi\nModel: ObsEnc-2DCNN + 3D U-Net · IoU=0.57 · ~0.03s GPU" },
+        { label:'④ IP / SP / Radyometri', color:'#D97706',
+          desc:'Sağ → Elektrik → IP Cole-Cole + SP mekanizmaları\nSağ → Radyometri → Th/U haritası + REE hedef skoru\nIP chargeability>0.3 + SP<-80mV → güçlü hidrotermal hedef' },
+        { label:'⑤ Joint Inversion',      color:C.purple,
+          desc:'Sol → Ters Çözüm → Grav+Mag+CSAMT aktif → 32³ grid\n60 iterasyon, Adam optimizer, normalize MSE\nMerkez → İstatistik → misfit yakınsama grafiğini izle' },
+        { label:'⑥ Füzyon + Belirsizlik', color:C.ok,
+          desc:'Sağ → Füzyon → 7 yöntem bileşik skor (Fuzzy Gamma γ=0.85)\nBileşik skor > 0.75 → yüksek öncelikli sondaj hedefi\nSağ → Belirsizlik → CV<0.3 = güvenilir hedef bölgesi' },
+        { label:'⑦ 3D Görüntüle',        color:C.teal,
+          desc:'Merkez → 3D Model kartı → popup modal açılır\nİzoyüzey eşiği, şeffaflık, arka plan ayarları\nBinary Mask ile sadece yüksek güven bölgelerini gör' },
+        { label:'⑧ Dışa Aktar',          color:C.textMid,
+          desc:'Sağ → Dışa Aktar → CSV + PNG\nGeoJSON/GeoTIFF → QGIS entegrasyonu (v4.1 planı)\nSondaj lokasyon önerisi için koordinatları kullan' },
+      ]
+    },
+    pinn: {
+      title: '🧠 GeoUNet — Öğrenilmiş Ters Çözüm',
+      items: [
+        { label:'Mimari', color:'#818cf8',
+          desc:"ObsEncoder: Conv2d(2→32→64) + Conv2d(64,64×32,1) → (B,64,32³)\n3D U-Net: e1/e2/e3 encoder + bottleneck + d1/d2/d3 decoder\nNorm: GroupNorm + GELU · Parametre: ~5.8M · Checkpoint: 22.2 MB" },
+        { label:'Eğitim', color:'#818cf8',
+          desc:"Veri: make_vein() sentetik damar geometrisi (32³ grid)\nKayıp: MSE + 0.5×Dice + 0.01×Laplacian + 0.005×TV\nOptimizer: AdamW · Scheduler: CosineAnnealing · Epoch: 204\nPlatform: Kaggle T4 GPU · val_iou: 0.5703 · val_mae: 0.022" },
+        { label:'Giriş normalizasyonu', color:C.teal,
+          desc:"gz  / 5.97×10⁻⁷  (eğitim std — grav_fwd çıkışı)\nmag / 6.73×10⁻²  (eğitim std — mag_fwd çıkışı)\nGiriş boyutu: 21×21 → 32×32 bilinear resize (otomatik)" },
+        { label:'Endüstri terminolojisi', color:C.accent,
+          desc:"Surrogate inversion network / learned geophysical inversion\nNon-iterative inversion: tek geçişte sonuç (<0.1s)\nForward-trained inverse model — sentetik (X,Y) çiftiyle eğitim\nRef: Wu & McMechan (2019), Sun & Demanet (2020)" },
+        { label:'Threshold rehberi', color:C.ok,
+          desc:"0.30-0.40 → hassas, geniş cevher bölgesi (düşük specificity)\n0.45-0.55 → dengeli (önerilen başlangıç)\n0.60-0.75 → konservatif, yüksek güven çekirdeği\nBinary Mask butonu ile eşik üstünü 3D göster" },
+        { label:'Sınırlamalar', color:C.warn,
+          desc:"Eğitim dağılımı: make_vein() geometrisi (damar tipi)\nDomaine özgü: Beylikova REE-F-Ba-Th analogu\nX_mag_grav verisi eğitim forward'ından farklıysa sapma olabilir\nv4.1 hedefi: 64³ grid, CSAMT kanalı, fine-tune pipeline" },
       ]
     },
     electric: {
@@ -1649,6 +1699,13 @@ export default function App() {
   const [jiCorr, setJiCorr]=useState({});
   const [jiSummary, setJiSummary]=useState(null);
 
+  // GeoUNet / PINN
+  const [pinnStatus, setPinnStatus]=useState(null);
+  const [pinnRunning, setPinnRunning]=useState(false);
+  const [pinnResult, setPinnResult]=useState(null);
+  const [pinnThreshold, setPinnThreshold]=useState(0.35);
+  const [pinnSource, setPinnSource]=useState("forward");
+
   // Analiz geçmişi
   const [lastRun, setLastRun]=useState(null);
   const [savedAnalyses, setSavedAnalyses]=useState([]);
@@ -1661,6 +1718,11 @@ export default function App() {
   // Fullscreen
   const viewerRef=useRef();
   const [isFs, setIsFs]=useState(false);
+  const [show3D, setShow3D]=useState(false); // 3D popup modal
+  const [rightW, setRightW]=useState(320);   // sağ panel genişliği (px)
+  const [leftW,  setLeftW] =useState(260);   // sol panel genişliği (px)
+  const rightResizing=useRef(false);
+  const leftResizing=useRef(false);
 
   const ts=()=>new Date().toLocaleTimeString('tr-TR',{hour12:false});
   const log=(level,msg)=>setLogs(p=>[{t:ts(),level,msg},...p].slice(0,300));
@@ -1689,14 +1751,35 @@ export default function App() {
     setSimpegAvailable(null);
     setFvmAvailable(null);
     setRadAvailable(null);
-    apiFetch(`${apiBase}/api/health`).then(r=>r.json())
-      .then(d=>{
-        log('ok',`Backend v${d.version} bağlandı.`);
-        setBackendOk(true);
-      })
-      .catch(()=>log('err','Backend bağlantısı kurulamadı.'));
-    fetchDatasets();
-    fetchAnalyses();
+
+    // Yerel backend için retry — cold start ~3-5 sn sürebilir
+    let retries = 0;
+    const maxRetries = 8;
+    let cancelled = false;
+    const tryConnect = () => {
+      if (cancelled) return;
+      apiFetch(`${apiBase}/api/health`).then(r=>r.json())
+        .then(d=>{
+          if (cancelled) return;
+          log('ok',`Backend v${d.version} bağlandı.`);
+          setBackendOk(true);
+          fetchDatasets();
+          fetchAnalyses();
+          checkPinnStatus();
+        })
+        .catch(()=>{
+          if (cancelled) return;
+          retries++;
+          if (retries < maxRetries) {
+            log('info',`Backend bekleniyor... (${retries}/${maxRetries})`);
+            setTimeout(tryConnect, 2000);
+          } else {
+            log('err','Backend bağlantısı kurulamadı.');
+          }
+        });
+    };
+    tryConnect();
+    return () => { cancelled = true; };
   }, [apiBase]);
 
   // Modül status'larını SADECE backend bağlandıktan sonra kontrol et
@@ -1714,6 +1797,10 @@ export default function App() {
       .then(d=>setSpAvailable(d.available??false)).catch(()=>setSpAvailable(false));
     apiFetch(`${apiBase}/api/fusion/status`).then(r=>r.json())
       .then(d=>setFusionAvailable(d.available??false)).catch(()=>setFusionAvailable(false));
+    apiFetch(`${apiBase}/api/seismic/status`).then(r=>r.json())
+      .then(d=>setSeismicAvailable(d.available??false)).catch(()=>setSeismicAvailable(false));
+    apiFetch(`${apiBase}/api/export/status`).then(r=>r.json())
+      .then(d=>setExportGeoAvailable(d.available??false)).catch(()=>setExportGeoAvailable(false));
     apiFetch(`${apiBase}/api/data/formats`).then(r=>r.json())
       .then(d=>setDataFormats(d.formats||{})).catch(()=>{});
   }, [backendOk, apiBase]);
@@ -1851,6 +1938,24 @@ export default function App() {
     finally{setFusionRunning(false);}
   };
 
+  const runSeismic=async()=>{
+    setSeismicRunning(true); log('info','Sismik refraksiyon hesaplanıyor...');
+    try{
+      const d=await(await apiFetch(`${apiBase}/api/seismic/forward`,{
+        method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({
+          dataset:selY, selected_index:settings.index,
+          vp_host:seismicParams.vp_host, vp_ore:seismicParams.vp_ore,
+          noise_pct:seismicParams.noise_pct,
+        }),
+      })).json();
+      setSeismicResult(d);
+      setRightTab('seismic');
+      log('ok',`Sismik tamamlandı — Vp: ${d.stats?.vp_min_ms?.toFixed(0)||'—'}–${d.stats?.vp_max_ms?.toFixed(0)||'—'} m/s`);
+    }catch(e){log('err',`Sismik hatası: ${e.message}`);}
+    finally{setSeismicRunning(false);}
+  };
+
   const runRadiometry=async()=>{
     setRadRunning(true); log('info','Radyometri & ısı akışı hesaplanıyor...');
     try{
@@ -1875,7 +1980,7 @@ export default function App() {
   // FVM status kontrolü
   useEffect(()=>{
     apiFetch(`${apiBase}/api/fvm/status`).then(r=>r.json())
-      .then(d=>setFvmAvailable(d.available||false)).catch(()=>setFvmAvailable(null));
+      .then(d=>setFvmAvailable(d.available??false)).catch(()=>setFvmAvailable(false));
   },[apiBase]);
 
   const runFvmCompare=async()=>{
@@ -1979,6 +2084,40 @@ export default function App() {
     finally { setUqRunning(false); }
   };
 
+
+  const checkPinnStatus = async () => {
+    try {
+      const r = await apiFetch(`${apiBase}/api/pinn/status`);
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const d = await r.json();
+      setPinnStatus(d);
+    } catch(e) { setPinnStatus({available:false, error:e.message}); }
+  };
+
+  const runPINN = async () => {
+    setPinnRunning(true);
+    log("info", "GeoUNet inference başlatıldı...");
+    try {
+      const body = {
+        dataset: selY || null,
+        selected_index: settings.index,
+        dataset_grav_mag: pinnSource === "obs" ? (selGM || null) : null,
+        threshold: pinnThreshold,
+      };
+      const r = await apiFetch(`${apiBase}/api/pinn/infer`, {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify(body),
+      });
+      if (!r.ok) { const e=await r.json().catch(()=>({detail:"Bilinmeyen hata"})); throw new Error(e.detail||`HTTP ${r.status}`); }
+      const d = await r.json();
+      setPinnResult(d);
+      updateModel(d.model_data);
+      setLastRun("pinn");
+      setRightTab("pinn");
+      log("ok", `GeoUNet tamamlandı — cevher hacmi: ${(d.stats.ore_volume_m3/1e6).toFixed(2)} Mm³, IoU grid: ${d.stats.grid_size}³`);
+    } catch(e) { log("err", `PINN hatası: ${e.message}`); }
+    finally { setPinnRunning(false); }
+  };
   const applyUQLayer = (mode) => {
     if (!uqResult) return;
     const layers = { mean: uqResult.mean_model, std: uqResult.std_model,
@@ -2001,6 +2140,7 @@ export default function App() {
         body:JSON.stringify({name,type:lastRun,dataset_used:selY,settings,results,metrics,
           model_data:modelData,history:jiHistory,correlation:jiCorr,summary:jiSummary})});
       log('ok',`Kaydedildi: "${name}"`); fetchAnalyses();
+          checkPinnStatus();
     }catch(e){log('err',`Kayıt hatası: ${e.message}`);}
     finally{setSaving(false);}
   };
@@ -2056,17 +2196,28 @@ export default function App() {
   ];
 
   const viewTabs=[
-    {id:'3d',label:'3D',icon:Box},
+    {id:'3d',   label:'3D',  icon:Box},
+    {id:'slice',label:'KST', icon:Layers},
+    {id:'map',  label:'HRT', icon:Map},
+    {id:'stats',label:'İST', icon:BarChart2},
   ];
+
+  const handleViewTab = (id) => {
+    if (id === '3d') { setShow3D(true); return; }
+    setSplitView(id === 'slice' ? 'slice' : id === 'map' ? 'map' : 'stats');
+    setViewMode(id);
+  };
 
   const rightTabs=[
     {id:'stats',  label:'Analiz',     icon:Activity},
+    {id:'pinn',   label:'PINN',       icon:BrainCircuit},
     {id:'uq',     label:'Belirsizlik',icon:AlertCircle},
     {id:'simpeg', label:'SimPEG',     icon:GitCompare},
     {id:'fvm',    label:'FVM',        icon:Layers},
     {id:'radio',  label:'Radyometri', icon:Waves},
     {id:'elec',   label:'Elektrik',   icon:Zap},
     {id:'fusion', label:'Füzyon',     icon:GitMerge},
+    {id:'seismic',label:'Sismik',     icon:Activity},
     {id:'geom',   label:'Geometri',   icon:Mountain},
     {id:'filter', label:'Filtre',     icon:Filter},
     {id:'export', label:'Dışa Aktar', icon:Download},
@@ -2115,27 +2266,9 @@ export default function App() {
             </div>
             <div style={{ fontSize:8, color:'rgba(255,255,255,0.3)',
               letterSpacing:'0.18em', textTransform:'uppercase', marginTop:1 }}>
-              STUDIO 3.0
+              v4.0 BETA
             </div>
           </div>
-        </div>
-
-        {/* Dikey ayraç */}
-        <div style={{ width:1, height:24, background:'rgba(255,255,255,0.12)', flexShrink:0 }}/>
-
-        {/* Görünüm sekmeleri */}
-        <div style={{ display:'flex', gap:1 }}>
-          {viewTabs.map(({id,label,icon:Icon})=>(
-            <button key={id} onClick={()=>handleViewTab(id)}
-              style={{ display:'flex', alignItems:'center', gap:4, padding:'4px 11px',
-                       border:'none', cursor:'pointer', fontSize:11, fontWeight:600,
-                       background: viewMode===id ? C.accent : 'transparent',
-                       color: viewMode===id ? '#fff' : 'rgba(255,255,255,0.45)',
-                       borderBottom: viewMode===id ? `2px solid ${C.accentL}` : '2px solid transparent',
-                       transition:'all 0.12s', letterSpacing:'0.02em' }}>
-              <Icon size={11}/>{label}
-            </button>
-          ))}
         </div>
 
         <div style={{ flex:1 }}/>
@@ -2324,18 +2457,19 @@ export default function App() {
             <div style={{ padding:'14px 18px', borderBottom:`1px solid ${C.border}`,
                           display:'flex', alignItems:'center', justifyContent:'space-between',
                           background: C.header }}>
-              <span style={{ fontSize:14, fontWeight:700, color:'#fff' }}>GeoPINN Kullanım Rehberi</span>
+              <span style={{ fontSize:14, fontWeight:700, color:'#fff' }}>GeoPINN v4.0 BETA — Kullanım Rehberi</span>
               <button onClick={()=>setShowHelp(false)}
                 style={{ background:'rgba(255,255,255,0.15)', border:'none', borderRadius:5,
                          padding:'3px 8px', cursor:'pointer', color:'#fff', fontSize:12 }}>✕</button>
             </div>
 
             {/* Konu sekmeleri */}
-            <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, background:C.bg }}>
-              {[{id:'workflow',label:'İş Akışı'},{id:'values',label:'Değerler'},
-                {id:'geom',label:'Geometri'},{id:'simpeg',label:'SimPEG'},
-                {id:'radiometry',label:'Radyometri'},{id:'fvm',label:'FVM'},
-                {id:'electric',label:'IP & SP'},{id:'fusion',label:'Füzyon'}].map(({id,label})=>(
+            <div style={{ display:'flex', borderBottom:`1px solid ${C.border}`, background:C.bg, overflowX:'auto' }}>
+              {[{id:'workflow',label:'İş Akışı'},{id:'pinn',label:'GeoUNet'},
+                {id:'values',label:'Değerler'},{id:'geom',label:'Geometri'},
+                {id:'simpeg',label:'SimPEG'},{id:'radiometry',label:'Radyometri'},
+                {id:'fvm',label:'FVM'},{id:'electric',label:'IP & SP'},
+                {id:'fusion',label:'Füzyon'}].map(({id,label})=>(
                 <button key={id} onClick={()=>setHelpTopic(id)}
                   style={{ flex:1, padding:'9px 4px', border:'none', cursor:'pointer',
                            fontSize:11, fontWeight:700,
@@ -2386,8 +2520,28 @@ export default function App() {
       <div style={{ display:'flex', flex:1, minHeight:0 }}>
 
         {/* ── Sol panel ── */}
-        <aside style={{ width:260, background: C.surface, borderRight:`1px solid ${C.border}`,
-                        display:'flex', flexDirection:'column', overflowY:'auto', flexShrink:0 }}>
+        <aside style={{ width:leftW, minWidth:200, maxWidth:400,
+                        background: C.surface, borderRight:`1px solid ${C.border}`,
+                        display:'flex', flexDirection:'column', overflowY:'auto', flexShrink:0,
+                        position:'relative' }}>
+          {/* Sol panel resize handle — sağ kenar */}
+          <div
+            onMouseDown={e=>{
+              leftResizing.current=true;
+              const startX=e.clientX, startW=leftW;
+              const onMove=ev=>{
+                if(!leftResizing.current) return;
+                setLeftW(Math.max(200,Math.min(400,startW+(ev.clientX-startX))));
+              };
+              const onUp=()=>{ leftResizing.current=false; window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
+              window.addEventListener('mousemove',onMove);
+              window.addEventListener('mouseup',onUp);
+            }}
+            style={{ position:'absolute', right:0, top:0, bottom:0, width:4, zIndex:50,
+                     cursor:'col-resize', background:'transparent' }}
+            onMouseEnter={e=>e.currentTarget.style.background=`${C.accent}40`}
+            onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+          />
 
           {/* Sol sekme */}
           <div style={{ display:'flex', borderBottom:`1px solid ${C.border}` }}>
@@ -2554,6 +2708,16 @@ export default function App() {
                 <Btn onClick={runAnalysis} icon={Play} disabled={loading} style={{width:'100%'}}>
                   {loading?<><Loader2 size={14} style={{animation:'spin 1s linear infinite'}}/>&nbsp;İşleniyor...</>:'Analizi Başlat'}
                 </Btn>
+                <Btn onClick={()=>{setRightTab("pinn");runPINN();}} icon={BrainCircuit}
+                  disabled={pinnRunning}
+                  style={{width:"100%",background:pinnRunning?"#1e1b4b":"#312e81",color:"#c7d2fe",border:"1px solid #4338ca"}}>
+                  {pinnRunning
+                    ?<><Loader2 size={14} style={{animation:"spin 1s linear infinite"}}/>&nbsp;GeoUNet çalışıyor...</>
+                    :<>GeoUNet Inference{pinnStatus&&!pinnStatus.available
+                        ?<span style={{fontSize:9,marginLeft:4,color:"#f87171"}}>(ckpt yok)</span>
+                        :pinnStatus&&pinnStatus.available
+                        ?<span style={{fontSize:9,marginLeft:4,color:"#86efac"}}>✓</span>:null}</>}
+                </Btn>
                 <div style={{display:'flex',gap:6}}>
                   <Btn onClick={saveAnalysis} icon={Save} variant="secondary" size="sm" disabled={saving||!lastRun} style={{flex:1}}>Kaydet</Btn>
                 </div>
@@ -2661,23 +2825,33 @@ export default function App() {
           </div>
         </aside>
 
-        {/* ── Merkez viewer ── */}
+        {/* ── Merkez alan — split view + içerik ── */}
         <main style={{ flex:1, position:'relative', minWidth:0, display:'flex',
-          background: viewBg==='dark'?'#0F172A':'#EFF6FF' }}
-          ref={viewerRef}>
-          {/* Split panel */}
+          background: C.bg, overflow:'hidden' }}>
+
+          {/* Split panel (KST/HRT/İST) */}
           {splitView && (
-            <div style={{ width:420, flexShrink:0, borderRight:`1.5px solid ${C.border}`,
+            <div style={{ width: splitView ? '100%' : 0, flexShrink:0,
               background:C.panel, display:'flex', flexDirection:'column', overflow:'hidden' }}>
-              <div style={{ height:32, background:C.bg, borderBottom:`1px solid ${C.border}`,
-                display:'flex', alignItems:'center', padding:'0 10px', gap:8, flexShrink:0 }}>
+              <div style={{ height:36, background:C.surface, borderBottom:`1px solid ${C.border}`,
+                display:'flex', alignItems:'center', padding:'0 12px', gap:8, flexShrink:0 }}>
                 <span style={{ fontSize:10, fontWeight:700, color:C.teal,
                   textTransform:'uppercase', letterSpacing:'0.06em' }}>
-                  {splitView==='stats'?'İstatistik':splitView==='slice'?'Kesit':'Harita'}
+                  {splitView==='stats'?'İstatistik':splitView==='slice'?'Kesit Görünümü':'Anomali Haritası'}
                 </span>
-                <button onClick={()=>setSplitView(null)}
-                  style={{ marginLeft:'auto', background:'transparent', border:'none',
-                    cursor:'pointer', color:C.textMid, fontSize:14 }}>✕</button>
+                <div style={{marginLeft:'auto',display:'flex',gap:6}}>
+                  {/* 3D popup butonu */}
+                  <button onClick={()=>setShow3D(true)}
+                    style={{ display:'flex',alignItems:'center',gap:5,
+                             padding:'4px 10px', borderRadius:5, border:`1px solid ${C.border}`,
+                             background:C.surface, color:C.accent, fontSize:11,
+                             fontWeight:700, cursor:'pointer' }}>
+                    <Box size={12}/> 3D Görüntüle
+                  </button>
+                  <button onClick={()=>setSplitView(null)}
+                    style={{ background:'transparent', border:'none',
+                      cursor:'pointer', color:C.textMid, fontSize:16, lineHeight:1 }}>✕</button>
+                </div>
               </div>
               <div style={{ flex:1, overflow:'hidden' }}>
                 {splitView==='stats' && (
@@ -2694,78 +2868,149 @@ export default function App() {
               </div>
             </div>
           )}
-          {/* 3D Viewer */}
-          <div style={{ flex:1, position:'relative', minWidth:0 }}>
 
-          {/* Viewer araç çubuğu */}
-          <div style={{ position:'absolute', top:10, left:10, zIndex:30, display:'flex', gap:6 }}>
-            {viewMode==='slice' && (
-              <div style={{ display:'flex', gap:4, background:'rgba(255,255,255,0.95)',
-                            border:`1px solid ${C.border}`, borderRadius:6, padding:4,
-                            boxShadow:'0 2px 8px rgba(0,0,0,0.1)' }}>
-                {['x','y','z'].map(ax=>(
-                  <button key={ax} onClick={()=>setSliceAxis(ax)}
-                    style={{ padding:'3px 10px', borderRadius:4, border:'none', cursor:'pointer',
-                             fontSize:11, fontWeight:700,
-                             background: sliceAxis===ax ? C.teal : 'transparent',
-                             color: sliceAxis===ax ? '#fff' : C.textMid }}>
-                    {ax.toUpperCase()}
+          {/* Varsayılan merkez — split view kapalıyken */}
+          {!splitView && (
+            <div style={{ flex:1, display:'flex', flexDirection:'column',
+                          alignItems:'center', justifyContent:'center', gap:20,
+                          color:C.textMid, padding:40 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, width:'100%', maxWidth:520 }}>
+                {[
+                  { id:'3d',    label:'3D Model',      icon:Box,      desc:'İzoyüzey görüntüleyici', action:()=>setShow3D(true) },
+                  { id:'stats', label:'İstatistik',    icon:BarChart2, desc:'Değer dağılımı ve metrikler', action:()=>setSplitView('stats') },
+                  { id:'slice', label:'Kesit',         icon:Layers,   desc:'X/Y/Z derinlik kesitleri', action:()=>setSplitView('slice') },
+                  { id:'map',   label:'Anomali Haritası', icon:Map,   desc:'Leaflet üzerinde görüntüle', action:()=>setSplitView('map') },
+                ].map(({id,label,icon:Icon,desc,action})=>(
+                  <button key={id} onClick={action}
+                    style={{ padding:'18px 16px', borderRadius:10,
+                             border:`1.5px solid ${C.border}`,
+                             background:C.surface, cursor:'pointer',
+                             display:'flex', flexDirection:'column', alignItems:'flex-start', gap:8,
+                             textAlign:'left', transition:'border-color 0.15s',
+                    }}
+                    onMouseEnter={e=>e.currentTarget.style.borderColor=C.accent}
+                    onMouseLeave={e=>e.currentTarget.style.borderColor=C.border}>
+                    <Icon size={20} color={C.accent}/>
+                    <div>
+                      <div style={{fontSize:13,fontWeight:700,color:C.text}}>{label}</div>
+                      <div style={{fontSize:11,color:C.textMid,marginTop:2}}>{desc}</div>
+                    </div>
                   </button>
                 ))}
-                <div style={{width:1,background:C.border,margin:'2px 4px'}}/>
-                <input type="range" min={0} max={(activeDisplay?.length??16)-1} value={sliceIdx}
-                  onChange={e=>{setSliceIdx(parseInt(e.target.value));stopSweep();}}
-                  style={{width:80,accentColor:C.teal}}/>
-                <span style={{fontSize:10,fontFamily:'monospace',color:C.header,minWidth:20,textAlign:'center'}}>
-                  {sliceIdx}
-                </span>
               </div>
-            )}
-          </div>
-
-          <button onClick={toggleFs}
-            style={{ position:'absolute', top:10, right:10, zIndex:30,
-                     background:'rgba(255,255,255,0.95)', border:`1px solid ${C.border}`,
-                     borderRadius:6, padding:6, cursor:'pointer', color: C.header,
-                     boxShadow:'0 2px 8px rgba(0,0,0,0.1)' }}>
-            {isFs?<Minimize2 size={14}/>:<Maximize2 size={14}/>}
-          </button>
-
-          {/* Koordinat bilgisi */}
-          <div style={{ position:'absolute', bottom:10, left:10, zIndex:20,
-                        background:'rgba(255,255,255,0.9)', border:`1px solid ${C.border}`,
-                        borderRadius:4, padding:'4px 8px', fontSize:9, fontFamily:'monospace',
-                        color: C.textMid }}>
-            Domain: 480×480×480 m · Grid: {activeDisplay?.length??'—'}³
-          </div>
-
-          {/* İçerik */}
-          {viewMode==='3d' && (
-            <>
-              <Scene3D modelData={activeDisplay} isoThreshold={isoThreshold}
-                opacity={opacity3d} showTopo={showTopo} topoOpacity={topoOpacity} bgColor={viewBg}/>
-              {activeDisplay?.length > 0 && (
-                <ColorBar vmin={colorRange.min} vmax={colorRange.max} label="Cevher [0–1]"/>
-              )}
               {!activeDisplay?.length && (
-                <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column',
-                              alignItems:'center', justifyContent:'center', color: viewBg==='dark'?'#475569':C.textMid }}>
-                  <Mountain size={64} style={{opacity:0.2,marginBottom:16}}/>
-                  <div style={{fontSize:14, fontWeight:600}}>Analiz çalıştırın</div>
-                  <div style={{fontSize:12,marginTop:4,opacity:0.7}}>Sol panelden veri seçip başlatın.</div>
+                <div style={{fontSize:12,color:C.textLow,textAlign:'center'}}>
+                  Görüntülemek için önce bir analiz çalıştırın.
                 </div>
               )}
-            </>
+            </div>
           )}
-          {/* Kesit/Harita/İstatistik floating panel olarak açılır */}
-          </div>
         </main>
 
+        {/* ── 3D Popup Modal ── */}
+        {show3D && (
+          <div style={{ position:'fixed', inset:0, zIndex:1100,
+                        background:'rgba(0,0,0,0.80)', display:'flex',
+                        alignItems:'center', justifyContent:'center',
+                        zIndex:1100 }}
+               onClick={e=>{ if(e.target===e.currentTarget) setShow3D(false); }}>
+            <div style={{ width:'82vw', height:'82vh', background:C.bg,
+                          borderRadius:12, border:`1.5px solid ${C.border}`,
+                          display:'flex', flexDirection:'column',
+                          boxShadow:'0 24px 80px rgba(0,0,0,0.6)', overflow:'hidden' }}>
+              {/* Modal başlık */}
+              <div style={{ height:40, background:C.surface, borderBottom:`1px solid ${C.border}`,
+                            display:'flex', alignItems:'center', padding:'0 14px', gap:10, flexShrink:0 }}>
+                <Box size={13} color={C.accent}/>
+                <span style={{fontSize:11,fontWeight:700,color:C.text,letterSpacing:'0.05em'}}>
+                  3D MODEL GÖRÜNTÜLEYİCİ
+                </span>
+                <span style={{fontSize:10,color:C.textMid,marginLeft:4}}>
+                  Domain: 480×480×480 m · Grid: {activeDisplay?.length??'—'}³
+                </span>
+                {/* Görünüm kontrolleri */}
+                <div style={{marginLeft:'auto',display:'flex',gap:6,alignItems:'center'}}>
+                  {/* Arka plan */}
+                  {['dark','light'].map(m=>(
+                    <button key={m} onClick={()=>setViewBg(m)}
+                      style={{ padding:'3px 8px', borderRadius:4, fontSize:10, cursor:'pointer',
+                               border:`1px solid ${C.border}`,
+                               background:viewBg===m?C.accent:C.surface,
+                               color:viewBg===m?'#fff':C.textMid }}>
+                      {m==='dark'?'◑ Koyu':'☀ Açık'}
+                    </button>
+                  ))}
+                  <button onClick={()=>setShow3D(false)}
+                    style={{ background:'transparent', border:`1px solid ${C.border}`,
+                             borderRadius:6, padding:'4px 10px', cursor:'pointer',
+                             color:C.textMid, fontSize:12 }}>✕ Kapat</button>
+                </div>
+              </div>
+              {/* 3D Canvas */}
+              <div style={{flex:1,position:'relative'}} ref={viewerRef}>
+                {activeDisplay?.length > 0 ? (
+                  <>
+                    <Scene3D modelData={activeDisplay} isoThreshold={isoThreshold}
+                      opacity={opacity3d} showTopo={showTopo} topoOpacity={topoOpacity} bgColor={viewBg}/>
+                    <ColorBar vmin={colorRange.min} vmax={colorRange.max} label="Cevher [0–1]"/>
+                  </>
+                ) : (
+                  <div style={{ position:'absolute', inset:0, display:'flex', flexDirection:'column',
+                                alignItems:'center', justifyContent:'center', color:C.textMid, gap:12 }}>
+                    <Mountain size={48} style={{opacity:0.2}}/>
+                    <div style={{fontSize:13}}>Önce bir analiz çalıştırın</div>
+                  </div>
+                )}
+                {/* Slice toolbar sadece slice modunda */}
+                {viewMode==='slice' && (
+                  <div style={{ position:'absolute', top:10, left:10, zIndex:30,
+                                display:'flex', gap:4, background:C.surface,
+                                border:`1px solid ${C.border}`, borderRadius:6, padding:4 }}>
+                    {['x','y','z'].map(ax=>(
+                      <button key={ax} onClick={()=>setSliceAxis(ax)}
+                        style={{ padding:'3px 10px', borderRadius:4, border:'none', cursor:'pointer',
+                                 fontSize:11, fontWeight:700,
+                                 background: sliceAxis===ax ? C.teal : 'transparent',
+                                 color: sliceAxis===ax ? '#fff' : C.textMid }}>
+                        {ax.toUpperCase()}
+                      </button>
+                    ))}
+                    <div style={{width:1,background:C.border,margin:'2px 4px'}}/>
+                    <input type="range" min={0} max={(activeDisplay?.length??16)-1} value={sliceIdx}
+                      onChange={e=>{setSliceIdx(parseInt(e.target.value));stopSweep();}}
+                      style={{width:80,accentColor:C.teal}}/>
+                    <span style={{fontSize:10,fontFamily:'monospace',color:C.text,minWidth:20}}>{sliceIdx}</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Sağ Panel: dikey ikon rail + içerik ── */}
-        <aside style={{ display:'flex', borderLeft:`1.5px solid ${C.border}`, flexShrink:0 }}>
+        <aside style={{ display:'flex', borderLeft:`1.5px solid ${C.border}`, flexShrink:0, position:'relative' }}>
+          {/* Resize handle — sol kenar */}
+          <div
+            onMouseDown={e=>{
+              rightResizing.current=true;
+              const startX=e.clientX, startW=rightW;
+              const onMove=ev=>{
+                if(!rightResizing.current) return;
+                const delta=startX-ev.clientX;
+                setRightW(Math.max(280,Math.min(560,startW+delta)));
+              };
+              const onUp=()=>{ rightResizing.current=false; window.removeEventListener('mousemove',onMove); window.removeEventListener('mouseup',onUp); };
+              window.addEventListener('mousemove',onMove);
+              window.addEventListener('mouseup',onUp);
+            }}
+            style={{ position:'absolute', left:0, top:0, bottom:0, width:4, zIndex:50,
+                     cursor:'col-resize', background:'transparent' }}
+            onMouseEnter={e=>e.currentTarget.style.background=`${C.accent}40`}
+            onMouseLeave={e=>e.currentTarget.style.background='transparent'}
+          />
 
           {/* Dikey ikon rail */}
-          <div style={{ width:46, background: theme==='dark'?'#0A0C10':'#0D1117',
+          <div style={{ width:46, background: theme==='dark'?'#0A0C10':'#1A1F2E',
             borderRight:`1px solid ${C.border}`, display:'flex', flexDirection:'column',
             alignItems:'center', paddingTop:8, gap:1, flexShrink:0 }}>
             {rightTabs.map(({id,label,icon:Icon})=>(
@@ -2789,8 +3034,8 @@ export default function App() {
           </div>
 
           {/* İçerik alanı */}
-          <div style={{ width:320, background: C.panel,
-                        display:'flex', flexDirection:'column', flexShrink:0 }}>
+          <div style={{ width:rightW, background: C.panel,
+                        display:'flex', flexDirection:'column', flexShrink:0, minWidth:280, maxWidth:560 }}>
 
           {/* Sekme başlığı */}
           <div style={{ height:36, borderBottom:`1px solid ${C.border}`,
@@ -3084,8 +3329,9 @@ export default function App() {
                   borderBottom:`1px solid ${C.border}`,paddingBottom:6}}>
                   Radyometri & Isı Akışı (U/Th/K)
                 </div>
-                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
-                  Cevher modelinden U/Th/K konsantrasyonu hesaplar →
+                <div style={{fontSize:11,color:C.text,lineHeight:1.6,
+                  padding:'8px 10px',background:C.bg,borderRadius:6,border:`1px solid ${C.border}`}}>
+                  Cevher modelinden U/Th/K konsantrasyonu hesaplar →{' '}
                   gammaray sayımı, Th/U alterasyon indeksi, radyojenik ısı akışı.
                 </div>
 
@@ -3104,14 +3350,14 @@ export default function App() {
                     ['k ısıl iletkenlik','k_thermal','W/mK',1,4,0.1],
                   ].map(([label,key,unit,min,max,step])=>(
                     <div key={key} style={{display:'flex',alignItems:'center',
-                      justifyContent:'space-between',marginBottom:5,gap:8}}>
-                      <span style={{fontSize:10,color:C.textMid,flex:'0 0 130px'}}>{label}</span>
+                      justifyContent:'space-between',marginBottom:6,gap:6,flexWrap:'nowrap'}}>
+                      <span style={{fontSize:10,color:C.text,flex:'0 0 110px',lineHeight:1.4,fontSize:10}}>{label}</span>
                       <input type="range" min={min} max={max} step={step}
                         value={radParams[key]}
                         onChange={e=>setRadParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
                         style={{flex:1,accentColor:C.teal}}/>
                       <span style={{fontSize:10,fontFamily:'monospace',
-                        color:C.teal,minWidth:55,textAlign:'right'}}>
+                        color:C.teal,minWidth:60,textAlign:'right',whiteSpace:'nowrap'}}>
                         {radParams[key].toFixed(1)} {unit}
                       </span>
                     </div>
@@ -3125,8 +3371,8 @@ export default function App() {
                 </Btn>
 
                 {radAvailable===false && apiBase!=='http://127.0.0.1:8000' && (
-                  <div style={{fontSize:10,color:C.textMid,background:C.panel,
-                    borderRadius:4,padding:'8px 10px',border:`1px solid ${C.border}`,lineHeight:1.6}}>
+                  <div style={{fontSize:10,color:C.text,background:C.surface,
+                    borderRadius:6,padding:'10px 12px',border:`1px solid ${C.border}`,lineHeight:1.7}}>
                     <div style={{fontWeight:700,color:C.warn,marginBottom:4}}>
                       Radyometri modülü aktif değil
                     </div>
@@ -3158,13 +3404,13 @@ export default function App() {
                         ].map(([k,v])=>(
                           <div key={k} style={{display:'flex',justifyContent:'space-between',
                             fontSize:11,marginBottom:3}}>
-                            <span style={{color:C.textMid}}>{k}</span>
-                            <span style={{fontFamily:'monospace',
+                            <span style={{color:C.text,fontSize:10}}>{k}</span>
+                            <span style={{fontFamily:'monospace',fontSize:11,fontWeight:600,
                               color:radResult.ree_index.stats.max_prob>0.6?'#22c55e':C.teal}}>{v}</span>
                           </div>
                         ))}
-                        <div style={{fontSize:10,color:C.textMid,marginTop:6,
-                          padding:'4px 8px',borderRadius:4,
+                        <div style={{fontSize:10,color:C.text,marginTop:6,
+                          padding:'6px 8px',borderRadius:4,lineHeight:1.5,
                           background:radResult.ree_index.stats.max_prob>0.6?'#22c55e18':'#f9731618',
                           border:`1px solid ${radResult.ree_index.stats.max_prob>0.6?'#22c55e40':'#f9731640'}`}}>
                           {radResult.ree_index.stats.interpretation}
@@ -3186,8 +3432,8 @@ export default function App() {
                         ].map(([k,v])=>(
                           <div key={k} style={{display:'flex',justifyContent:'space-between',
                             fontSize:11,marginBottom:3}}>
-                            <span style={{color:C.textMid}}>{k}</span>
-                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                            <span style={{color:C.text,fontSize:10}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal,fontSize:11,fontWeight:600}}>{v}</span>
                           </div>
                         ))}
                       </div>
@@ -3207,8 +3453,8 @@ export default function App() {
                         ].map(([k,v])=>(
                           <div key={k} style={{display:'flex',justifyContent:'space-between',
                             fontSize:11,marginBottom:3}}>
-                            <span style={{color:C.textMid}}>{k}</span>
-                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                            <span style={{color:C.text,fontSize:10}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal,fontSize:11,fontWeight:600}}>{v}</span>
                           </div>
                         ))}
                         <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
@@ -3260,8 +3506,9 @@ export default function App() {
                           value={ipParams[key]}
                           onChange={e=>setIpParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
                           style={{flex:1,accentColor:'#f97316'}}/>
-                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',minWidth:40,textAlign:'right'}}>
-                          {ipParams[key]}
+                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',
+                          minWidth:50,textAlign:'right',flexShrink:0}}>
+                          {Number(ipParams[key]).toFixed(2)}
                         </span>
                       </div>
                     ))}
@@ -3279,8 +3526,9 @@ export default function App() {
                           value={ipParams[key]}
                           onChange={e=>setIpParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
                           style={{flex:1,accentColor:'#f97316'}}/>
-                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',minWidth:40,textAlign:'right'}}>
-                          {ipParams[key]}
+                        <span style={{fontSize:9,fontFamily:'monospace',color:'#f97316',
+                          minWidth:50,textAlign:'right',flexShrink:0}}>
+                          {Number(ipParams[key]).toFixed(2)}
                         </span>
                       </div>
                     ))}
@@ -3369,6 +3617,82 @@ export default function App() {
             )}
 
             {/* Füzyon paneli */}
+            {rightTab==='seismic' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
+                <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
+                  Sismik refraksiyon — t-x eğrisi ve Vp profili.
+                  Kaya kalitesi (Q sınıfı) ve derinlik kontrolü.
+                </div>
+                <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                  {[
+                    ['Vp host (m/s)',  'vp_host', 500,  5000, 100],
+                    ['Vp cevher (m/s)','vp_ore',  2000, 7000, 100],
+                    ['Gürültü (%)',    'noise_pct',0,   10,   0.5],
+                  ].map(([label,key,min,max,step])=>(
+                    <div key={key} style={{display:'flex',alignItems:'center',gap:8,marginBottom:5}}>
+                      <span style={{fontSize:9,color:C.textMid,flex:'0 0 120px'}}>{label}</span>
+                      <input type="range" min={min} max={max} step={step}
+                        value={seismicParams[key]}
+                        onChange={e=>setSeismicParams(p=>({...p,[key]:parseFloat(e.target.value)}))}
+                        style={{flex:1,accentColor:C.teal}}/>
+                      <span style={{fontSize:9,fontFamily:'monospace',color:C.teal,minWidth:45,textAlign:'right'}}>
+                        {seismicParams[key]}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <Btn onClick={runSeismic} icon={seismicRunning?Loader2:Activity} variant='teal' size='sm'
+                  style={{width:'100%'}} disabled={seismicRunning||seismicAvailable===false}>
+                  {seismicRunning?'Hesaplanıyor...':seismicAvailable===null?'Kontrol ediliyor...':
+                   seismicAvailable===false?'Sismik modül yok':'Sismik Hesapla'}
+                </Btn>
+                {seismicResult&&(
+                  <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                    <div style={{background:C.bg,border:`1px solid ${C.teal}30`,borderRadius:5,padding:10}}>
+                      <div style={{fontSize:10,fontWeight:700,color:C.teal,marginBottom:6,textTransform:'uppercase'}}>
+                        Vp Profili
+                      </div>
+                      {[
+                        ['Vp min', seismicResult.stats?.vp_min_ms?.toFixed(0)+' m/s'],
+                        ['Vp maks', seismicResult.stats?.vp_max_ms?.toFixed(0)+' m/s'],
+                        ['Katman sayısı', seismicResult.stats?.n_layers],
+                      ].map(([k,v])=>(
+                        <div key={k} style={{display:'flex',justifyContent:'space-between',fontSize:11,marginBottom:3}}>
+                          <span style={{color:C.textMid}}>{k}</span>
+                          <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {seismicResult.layer_classes?.length>0&&(
+                      <div style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:5,padding:10}}>
+                        <div style={{fontSize:10,fontWeight:700,color:C.text,marginBottom:6,textTransform:'uppercase'}}>
+                          Kaya Sınıfları
+                        </div>
+                        {seismicResult.layer_classes.map((cls,i)=>(
+                          <div key={i} style={{display:'flex',alignItems:'center',gap:8,marginBottom:4}}>
+                            <div style={{width:10,height:10,borderRadius:2,flexShrink:0,
+                              background:cls.color||C.teal}}/>
+                            <div style={{flex:1}}>
+                              <div style={{fontSize:10,color:C.text}}>{cls.label}</div>
+                              {seismicResult.layer_depths_m?.[i]&&(
+                                <div style={{fontSize:9,color:C.textLow}}>
+                                  Derinlik: {seismicResult.layer_depths_m[i].toFixed(0)} m
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{fontSize:10,color:C.textMid,padding:'6px 8px',
+                      background:`${C.teal}08`,borderRadius:4,lineHeight:1.5}}>
+                      {seismicResult.stats?.interpretation}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {rightTab==='fusion' && (
               <div style={{padding:12,display:'flex',flexDirection:'column',gap:10,overflowY:'auto'}}>
                 <div style={{fontSize:11,color:C.textMid,lineHeight:1.5}}>
@@ -3541,8 +3865,8 @@ export default function App() {
                         ].map(([k,v])=>(
                           <div key={k} style={{display:'flex',justifyContent:'space-between',
                             fontSize:11,marginBottom:3}}>
-                            <span style={{color:C.textMid}}>{k}</span>
-                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                            <span style={{color:C.text,fontSize:10}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal,fontSize:11,fontWeight:600}}>{v}</span>
                           </div>
                         ))}
                         <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
@@ -3566,8 +3890,8 @@ export default function App() {
                         ].map(([k,v])=>(
                           <div key={k} style={{display:'flex',justifyContent:'space-between',
                             fontSize:11,marginBottom:3}}>
-                            <span style={{color:C.textMid}}>{k}</span>
-                            <span style={{fontFamily:'monospace',color:C.teal}}>{v}</span>
+                            <span style={{color:C.text,fontSize:10}}>{k}</span>
+                            <span style={{fontFamily:'monospace',color:C.teal,fontSize:11,fontWeight:600}}>{v}</span>
                           </div>
                         ))}
                         <div style={{fontSize:10,color:C.textMid,marginTop:6,lineHeight:1.4}}>
@@ -3638,6 +3962,168 @@ export default function App() {
                 )}
               </div>
             )}
+
+            {rightTab==='pinn' && (
+              <div style={{padding:12,display:'flex',flexDirection:'column',gap:10}}>
+
+                {/* Başlık + durum */}
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <BrainCircuit size={15} color='#818cf8'/>
+                  <span style={{fontSize:11,fontWeight:700,color:'#c7d2fe',textTransform:'uppercase',letterSpacing:'0.06em'}}>
+                    GeoUNet — 3D U-Net Inference
+                  </span>
+                </div>
+
+                {/* Checkpoint durumu */}
+                <div style={{background:'#1e1b4b',border:'1px solid #312e81',borderRadius:6,padding:'8px 10px',fontSize:10}}>
+                  {pinnStatus ? (
+                    pinnStatus.available ? (
+                      <div style={{display:'flex',flexDirection:'column',gap:3}}>
+                        <div style={{display:'flex',justifyContent:'space-between'}}>
+                          <span style={{color:'#86efac',fontWeight:700}}>✓ Checkpoint yüklü</span>
+                          <span style={{color:'#64748b',fontFamily:'monospace'}}>{pinnStatus.checkpoint_size_mb} MB</span>
+                        </div>
+                        <div style={{color:'#94a3b8',fontFamily:'monospace'}}>
+                          Grid: {pinnStatus.grid_size}³ &nbsp;|&nbsp; IoU: {pinnStatus.iou_score} &nbsp;|&nbsp; {pinnStatus.device?.toUpperCase()}
+                        </div>
+                        <div style={{color:'#64748b'}}>{pinnStatus.architecture}</div>
+                      </div>
+                    ) : (
+                      <div style={{display:'flex',flexDirection:'column',gap:4}}>
+                        <span style={{color:'#f87171',fontWeight:700}}>⚠ Checkpoint bulunamadı</span>
+                        <div style={{color:'#94a3b8',lineHeight:1.4}}>
+                          <code style={{background:'#0f172a',padding:'1px 4px',borderRadius:3,fontSize:9}}>
+                            geopinn_unet_best_32.pt
+                          </code>
+                          {' '}dosyasını{' '}
+                          <code style={{background:'#0f172a',padding:'1px 4px',borderRadius:3,fontSize:9}}>
+                            geopinn-backend/
+                          </code>
+                          {' '}klasörüne koyun.
+                        </div>
+                      </div>
+                    )
+                  ) : (
+                    <span style={{color:'#64748b'}}>Durum kontrol ediliyor...</span>
+                  )}
+                  <button onClick={checkPinnStatus}
+                    style={{marginTop:6,background:'none',border:'1px solid #312e81',borderRadius:4,
+                            color:'#818cf8',fontSize:9,padding:'2px 8px',cursor:'pointer'}}>
+                    Yenile
+                  </button>
+                </div>
+
+                {/* Kontroller */}
+                <div style={{background:'#0f172a',border:'1px solid #1e293b',borderRadius:6,padding:'8px 10px',display:'flex',flexDirection:'column',gap:8}}>
+
+                  {/* Giriş kaynağı */}
+                  <div>
+                    <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em',marginBottom:4}}>
+                      Gözlem Kaynağı
+                    </div>
+                    <div style={{display:'flex',gap:6}}>
+                      {[{v:'forward',l:'Y → Forward'},{v:'obs',l:'X Dosyası'}].map(({v,l})=>(
+                        <button key={v} onClick={()=>setPinnSource(v)}
+                          style={{flex:1,padding:'4px 0',fontSize:10,borderRadius:4,cursor:'pointer',
+                                  background:pinnSource===v?'#312e81':'transparent',
+                                  border:`1px solid ${pinnSource===v?'#4338ca':'#1e293b'}`,
+                                  color:pinnSource===v?'#c7d2fe':'#64748b'}}>
+                          {l}
+                        </button>
+                      ))}
+                    </div>
+                    {pinnSource==='obs' && !selGM && (
+                      <div style={{fontSize:9,color:'#fbbf24',marginTop:4}}>
+                        ⚠ X — Grav/Mag dosyası seçili değil; sol panelden seçin.
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Threshold */}
+                  <div>
+                    <div style={{display:'flex',justifyContent:'space-between',marginBottom:3}}>
+                      <span style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                        Eşik (threshold)
+                      </span>
+                      <span style={{fontSize:10,fontFamily:'monospace',color:'#818cf8'}}>
+                        {pinnThreshold.toFixed(2)}
+                      </span>
+                    </div>
+                    <input type='range' min='0.10' max='0.80' step='0.01'
+                      value={pinnThreshold}
+                      onChange={e=>setPinnThreshold(parseFloat(e.target.value))}
+                      style={{width:'100%',accentColor:'#4f46e5'}}/>
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:8,color:'#475569'}}>
+                      <span>0.10 (hassas)</span><span>0.80 (katı)</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Çalıştır butonu */}
+                <button onClick={runPINN} disabled={pinnRunning||!pinnStatus?.available}
+                  style={{width:'100%',padding:'8px 0',borderRadius:6,border:'none',cursor:pinnRunning||!pinnStatus?.available?'not-allowed':'pointer',
+                          background:pinnRunning?'#1e1b4b':pinnStatus?.available?'#4338ca':'#1e293b',
+                          color:pinnStatus?.available?'#e0e7ff':'#475569',fontWeight:700,fontSize:12,
+                          display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                  {pinnRunning
+                    ? <><Loader2 size={13} style={{animation:'spin 1s linear infinite'}}/> Çalışıyor...</>
+                    : <><BrainCircuit size={13}/> GeoUNet Çalıştır</>}
+                </button>
+
+                {/* Sonuçlar */}
+                {pinnResult && (
+                  <div style={{display:'flex',flexDirection:'column',gap:6}}>
+                    <div style={{fontSize:9,color:'#64748b',textTransform:'uppercase',letterSpacing:'0.05em'}}>
+                      Inference Sonuçları
+                    </div>
+
+                    {/* Özet metrikler */}
+                    <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:4}}>
+                      {[
+                        {l:'Cevher Vokseli',  v: pinnResult.stats.ore_voxels.toLocaleString()},
+                        {l:'Cevher Hacmi',    v: `${(pinnResult.stats.ore_volume_m3/1e6).toFixed(2)} Mm³`},
+                        {l:'Cevher Fraksiyonu', v: `%${(pinnResult.stats.ore_fraction*100).toFixed(1)}`},
+                        {l:'Grid',            v: `${pinnResult.stats.grid_size}³`},
+                        {l:'Eşik',            v: pinnResult.stats.threshold_used.toFixed(2)},
+                        {l:'Cihaz',           v: pinnResult.device?.toUpperCase()},
+                      ].map(({l,v})=>(
+                        <div key={l} style={{background:'#0f172a',border:'1px solid #1e293b',borderRadius:4,padding:'5px 7px'}}>
+                          <div style={{fontSize:8,color:'#475569',textTransform:'uppercase',letterSpacing:'0.04em'}}>{l}</div>
+                          <div style={{fontSize:11,fontFamily:'monospace',color:'#c7d2fe',fontWeight:700}}>{v}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Sigmoid değer aralığı */}
+                    <div style={{background:'#0f172a',border:'1px solid #1e293b',borderRadius:4,padding:'5px 7px',fontSize:9}}>
+                      <span style={{color:'#475569'}}>Sigmoid çıkış: </span>
+                      <span style={{color:'#818cf8',fontFamily:'monospace'}}>
+                        [{pinnResult.stats.min.toFixed(3)}, {pinnResult.stats.max.toFixed(3)}]
+                      </span>
+                      <span style={{color:'#475569'}}> ort: </span>
+                      <span style={{color:'#818cf8',fontFamily:'monospace'}}>{pinnResult.stats.mean.toFixed(3)}</span>
+                    </div>
+
+                    {/* Kaynak */}
+                    <div style={{fontSize:9,color:'#475569',fontStyle:'italic'}}>
+                      Kaynak: {pinnResult.obs_source}
+                    </div>
+
+                    {/* Mask → 3D görüntüleyici */}
+                    {pinnResult.mask_data && (
+                      <button onClick={()=>{ updateModel(pinnResult.mask_data);
+                                             log('ok','Binary mask 3D görüntüleyiciye yüklendi.'); }}
+                        style={{fontSize:10,padding:'5px 0',background:'transparent',
+                                border:'1px solid #312e81',borderRadius:4,color:'#818cf8',cursor:'pointer'}}>
+                        Binary Mask'ı Göster
+                      </button>
+                    )}
+                  </div>
+                )}
+
+              </div>
+            )}
+
             {rightTab==='export' && (
               <div style={{padding:12}}>
                 <div style={{fontSize:11,fontWeight:700,color:C.header,textTransform:'uppercase',

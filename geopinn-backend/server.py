@@ -27,10 +27,11 @@ from pydantic import BaseModel, Field
 # Fizik motorları (proje içindeki engines/ klasöründen)
 from engines import gravity_prism, magnetic_prism, csamt_1d
 try:
-    from engines.pinn_stub import pinn_status as _pinn_status
-    PINN_STUB_OK = True
+    from engines.pinn_stub import pinn_status as _pinn_status, infer as _pinn_infer
+    PINN_AVAILABLE = True
 except ImportError:
-    PINN_STUB_OK = False
+    PINN_AVAILABLE = False
+PINN_STUB_OK = PINN_AVAILABLE  # geriye dönük uyumluluk
 
 try:
     from engines.ip_forward import IPForwardMotor, model_to_ip_params
@@ -49,6 +50,24 @@ try:
     FUSION_AVAILABLE = True
 except ImportError:
     FUSION_AVAILABLE = False
+
+try:
+    from engines.seismic_refrac import SeismicRefracMotor, VP_CLASSES, classify_vp
+    SEISMIC_AVAILABLE = True
+except ImportError:
+    SEISMIC_AVAILABLE = False
+
+try:
+    from engines.field_gridding import FieldGriddingMotor
+    GRIDDING_AVAILABLE = True
+except ImportError:
+    GRIDDING_AVAILABLE = False
+
+try:
+    from engines.export_geospatial import GeoExportMotor
+    EXPORT_GEO_AVAILABLE = True
+except ImportError:
+    EXPORT_GEO_AVAILABLE = False
 
 try:
     from engines.gravity_fvm import PrismGravityForwardFVM
@@ -1797,22 +1816,201 @@ def ip_status():
     }
 
 
+# ── Sismik Refraksiyon ───────────────────────────────────────────────────────
+class SeismicRequest(BaseModel):
+    dataset:          Optional[str] = None
+    selected_index:   int   = 0
+    shot_offset_max:  float = 480.0
+    n_receivers:      int   = 24
+    noise_pct:        float = 2.0
+    vp_host:          float = 2500.0
+    vp_ore:           float = 4500.0
+
+
+@app.post("/api/seismic/forward")
+def seismic_forward(req: SeismicRequest):
+    """Sismik refraksiyon ileri modeli — t-x eğrisi ve Vp profili."""
+    if not SEISMIC_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Sismik modül yüklenemedi.")
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+    motor = SeismicRefracMotor()
+    result = motor.calculate(
+        model_fwd, grids["x_c"], grids["z_c"],
+        shot_offset_max=req.shot_offset_max,
+        n_receivers=req.n_receivers,
+        noise_pct=req.noise_pct,
+        vp_host=req.vp_host,
+        vp_ore=req.vp_ore,
+    )
+    return {"dataset_used": os.path.basename(used_path) if used_path else "demo", **result}
+
+
+@app.get("/api/seismic/vp-classes")
+def seismic_vp_classes():
+    return {"classes": VP_CLASSES if SEISMIC_AVAILABLE else [], "engine_available": SEISMIC_AVAILABLE}
+
+
+@app.get("/api/seismic/status")
+def seismic_status():
+    return {"available": SEISMIC_AVAILABLE,
+            "method": "Intercept time, two-layer & multilayer (Telford 1990)"}
+
+
+# ── Saha Verisi Grid'leme ─────────────────────────────────────────────────────
+class FieldGridRequest(BaseModel):
+    channel_data: dict   # {"U_ppm": [v1,v2,...], "SP_mV": [...]}
+    obs_x:        List[float]
+    obs_y:        List[float]
+    domain_m:     float = 480.0
+    nx:           int   = 32
+    ny:           int   = 32
+    nz:           int   = 32
+    method:       str   = "rbf"   # rbf | idw | kriging
+    extend_3d:    bool  = True
+
+
+@app.post("/api/field/interpolate")
+def field_interpolate(req: FieldGridRequest):
+    """Düzensiz saha verisi → düzenli grid (RBF/IDW/Kriging)."""
+    if not GRIDDING_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Grid'leme modülü yüklenemedi.")
+    import numpy as np
+    motor = FieldGriddingMotor()
+    obs_values = {k: np.array(v) for k, v in req.channel_data.items()}
+    result = motor.grid_surface(
+        np.array(req.obs_x), np.array(req.obs_y),
+        obs_values,
+        domain_m=req.domain_m,
+        nx=req.nx, ny=req.ny,
+        method=req.method,
+        extend_3d=req.extend_3d,
+        nz=req.nz,
+    )
+    return result
+
+
+@app.get("/api/field/status")
+def field_status():
+    return {"available": GRIDDING_AVAILABLE,
+            "methods": ["rbf", "idw", "kriging"],
+            "reference": "Broomhead & Lowe (1988), Matheron (1963)"}
+
+
+# ── Jeouzamsal Dışa Aktarma ───────────────────────────────────────────────────
+from fastapi.responses import Response as FastAPIResponse
+
+class GeoExportRequest(BaseModel):
+    dataset:      Optional[str] = None
+    selected_index: int  = 0
+    layer_name:   str   = "anomaly"
+    format:       str   = "geojson"   # geojson | contour_geojson | geotiff | png
+    n_contours:   int   = 8
+    channel:      str   = "max_projection"  # max_projection | slice_z | composite
+
+
+@app.post("/api/export/geospatial")
+def export_geospatial(req: GeoExportRequest):
+    """Anomali haritası → GeoTIFF / GeoJSON / Shapefile."""
+    if not EXPORT_GEO_AVAILABLE:
+        raise HTTPException(status_code=503, detail="Export modülü yüklenemedi.")
+    import numpy as np
+    model_native, used_path = load_model_native(req.dataset, req.selected_index)
+    model_fwd, grids = resample_to_forward(model_native)
+
+    # 2D projeksiyon
+    if req.channel == "max_projection":
+        grid_2d = model_fwd.max(axis=2)
+    elif req.channel == "slice_z":
+        grid_2d = model_fwd[:, :, model_fwd.shape[2]//2]
+    else:
+        grid_2d = model_fwd.max(axis=2)
+
+    motor = GeoExportMotor()
+    result = motor.export_grid(
+        grid_2d, req.layer_name, req.format,
+        n_contours=req.n_contours,
+    )
+
+    if isinstance(result["data"], bytes):
+        return FastAPIResponse(
+            content=result["data"],
+            media_type=result["content_type"],
+            headers={"Content-Disposition": f'attachment; filename="{result["filename"]}"'},
+        )
+    return {"data": result["data"], "filename": result["filename"],
+            "format": result["format"], "content_type": result["content_type"]}
+
+
+@app.get("/api/export/status")
+def export_status():
+    return {
+        "available": EXPORT_GEO_AVAILABLE,
+        "formats": ["geojson", "contour_geojson", "geotiff", "png"],
+        "crs": "EPSG:4326 (WGS84) / EPSG:32636 (UTM 36N)",
+        "qgis_compatible": True,
+    }
+
+
+class PinnInferRequest(BaseModel):
+    dataset: Optional[str] = None
+    selected_index: int = 0
+    dataset_grav_mag: Optional[str] = None
+    threshold: float = Field(default=0.35, ge=0.0, le=1.0)
+
+
 @app.get("/api/pinn/status")
 def pinn_status_endpoint():
-    """PINN modülü durumu — v4.0 roadmap."""
-    if PINN_STUB_OK:
-        from engines.pinn_stub import pinn_status
-        return pinn_status()
+    """GeoUNet 3D U-Net checkpoint ve model durumu."""
+    if not PINN_AVAILABLE:
+        return {"available": False, "error": "engines.pinn_stub yüklenemedi."}
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    return _pinn_status(backend_dir=backend_dir)
+
+
+@app.post("/api/pinn/infer")
+def pinn_infer(req: PinnInferRequest):
+    """GeoUNet ile hızlı 3D jeolojik model tahmini.
+    Giriş: gz(21×21) + mag(21×21) — X_mag_grav dosyasından veya Y self-forward.
+    Çıkış: (32,32,32) geometri + binary mask + istatistikler."""
+    if not PINN_AVAILABLE:
+        raise HTTPException(status_code=503, detail="pinn_stub modülü yüklenemedi.")
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+
+    gz_map = mag_map = None
+    if req.dataset_grav_mag:
+        gm_path = _resolve_dataset_path(req.dataset_grav_mag)
+        if gm_path:
+            try:
+                gm_sample = _load_indexed_npy(gm_path, req.selected_index)
+                if gm_sample.ndim == 3 and gm_sample.shape[-1] == 2:
+                    mag_map = gm_sample[..., 0]
+                    gz_map  = gm_sample[..., 1]
+            except Exception as e:
+                raise HTTPException(status_code=400, detail=f"X_mag_grav okunamadı: {e}")
+
+    if gz_map is None or mag_map is None:
+        model_native, _ = load_model_native(req.dataset, req.selected_index)
+        model_fwd, grids = resample_to_forward(model_native)
+        gz_map  = forward_grav(model_fwd, grids)
+        mag_map = forward_mag(model_fwd, grids)
+
+    try:
+        result = _pinn_infer(gz_map=gz_map, mag_map=mag_map,
+                             backend_dir=backend_dir, threshold=req.threshold)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"GeoUNet inference hatası: {e}")
+
     return {
-        "available": False,
-        "version": "stub-3.x",
-        "roadmap": "v4.0.0",
-        "description": "PINN entegrasyonu v4.0'da gelecek",
-        "planned_features": [
-            "Laplace/Poisson PDE kayıp fonksiyonu",
-            "PyTorch autograd fizik katmanı",
-            "Çok-yöntemli PINN joint inversion",
-        ],
+        "model_data":  result["model_data"],
+        "mask_data":   result["mask_data"],
+        "stats":       result["stats"],
+        "checkpoint":  result["checkpoint"],
+        "device":      result["device"],
+        "obs_source":  "X_mag_grav dosyası" if req.dataset_grav_mag else "Y self-forward (sentetik)",
+        "meta": {"grid_size": 32, "domain_m": DOMAIN_EXTENT, "threshold": req.threshold},
     }
 
 
