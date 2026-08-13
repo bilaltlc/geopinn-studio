@@ -49,45 +49,45 @@ GeoPINN Studio is a desktop application for 3D geophysical forward modelling, jo
 
 ## Screenshots
 
-### v4.0 — Ana Ekran (Merkez Navigasyon Kartları)
-![Home Grid](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_merkez_grid_home.png)
-*2×2 navigasyon kartları — 3D Model / İstatistik / Kesit / Anomali Haritası*
+### v4.0 — Ana Ekran (2×2 Navigasyon Grid)
+![Ana Ekran](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_ana_ekran.png)
+*3D Model / İstatistik / Kesit / Anomali Haritası kartları · "Görüntülemek için önce bir analiz çalıştırın"*
 
-### v4.0 — GeoUNet 3D Popup (Y→Forward)
+### v4.0 — GeoUNet 3D Popup (Y→Forward, İki Cevher Gövdesi)
 ![3D Popup Y Forward](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_geounet_y_forward.png)
-*Y_beylikova_vein_32x32x32 · Y→Forward mod · İki ayrı cevher gövdesi · Cevher hacmi: 6.77 Mm³*
+*Y_beylikova_vein_32x32x32 · Y→Forward mod · İki ayrı cevher gövdesi · %6.7 fraksiyon · 7.46 Mm³*
 
-### v4.0 — GeoUNet 3D Popup (X Dosyası)
+### v4.0 — GeoUNet 3D Popup (X Dosyası, Damar Geometrisi)
 ![3D Popup X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_geounet_x_dosyasi.png)
-*X_mag_grav.npy · Gerçek anomali verisi · Damar şekli · Cyan-mor renk skalası*
+*X_mag_grav.npy · Gerçek anomali verisi · Damar şekli · Cyan-mor renk skalası · 12.50 Mm³*
 
-### v4.0 — Binary Mask 3D (Joint Inversion)
-![Binary Mask 3D](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_3d_popup_binary_mask.png)
-*Threshold=0.35 üstü vokseller · Binary mask görünümü · Cevher fraksiyonu: %10.8*
+### v4.0 — Anomali Haritası + PINN Paneli (X Dosyası)
+![Anomali Harita X PINN](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_x_dosyasi_pinn.png)
+*HRT modu · Checkpoint yüklü (22.2 MB, CUDA) · X_mag_grav.npy overlay · Beylikova 39°55N 31°40E*
 
-### v4.0 — GeoUNet PINN Paneli + Anomali Haritası
-![PINN Panel + Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_pinn_panel.png)
-*HRT modu açık · Checkpoint yüklü (22.2 MB, CUDA) · X_mag_grav.npy anomali overlay · Beylikova koordinatları*
+### v4.0 — Anomali Haritası (Y→Forward)
+![Anomali Harita Y](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_y_forward.png)
+*HRT modu · Y_beylikova_vein_32x32x32 · İki yüksek anomali bölgesi · Y→Forward mod*
 
-### v4.0 — İstatistik Paneli + PINN Sonuçları
-![Statistics PINN](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_istatistik_panel_pinn.png)
-*İST modu · Ortalama: 0.066 · P90: 0.079 · >0.5 hücre: 1925/32768 · %6.7 fraksiyon*
+### v4.0 — Binary Mask Anomali Haritası (X Dosyası)
+![Binary Mask Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_binary_mask.png)
+*HRT modu · Binary Mask → Harita · Threshold=0.35 üstü kırmızı · %11.3 fraksiyon · 12.50 Mm³*
 
-### v4.0 — Kesit Görünümü (GeoUNet Y→Forward)
-![Slice Y Forward](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_geounet_y_forward.png)
-*KST modu · Z kesiti · İki ayrı cevher bloğu · Viridis renk skalası · P2-P98 normalize*
+### v4.0 — Kesit Görünümü (Y→Forward, İki Gövde)
+![Kesit Y](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_y_forward_iki_govde.png)
+*KST modu · Z kesiti · İki ayrı cevher bloğu · Viridis · %6.7 fraksiyon*
 
 ### v4.0 — Kesit Görünümü (X Dosyası)
-![Slice X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_geounet_x_dosyasi.png)
-*X_mag_grav anomali verisi · Dairesel yüksek anomali bölgesi · Cevher hacmi: 12.50 Mm³*
+![Kesit X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_kesit_geounet_x_dosyasi.png)
+*KST modu · X_mag_grav · Dairesel yüksek anomali · %11.3 fraksiyon · 12.50 Mm³*
 
-### v4.0 — Anomali Haritası (X Dosyası)
-![Anomali Map X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_x_dosyasi.png)
-*HRT modu · OSM tile + GeoUNet tahmin overlay · Beylikova 39°55N 31°40E*
+### v4.0 — İstatistik Paneli (Y→Forward)
+![İstatistik Y](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_istatistik_y_forward.png)
+*İST modu · Ort: 0.066 · P90: 0.079 · >0.5 hücre: 1925/32768 · %6.7 fraksiyon*
 
-### v4.0 — Binary Mask Anomali Haritası
-![Binary Mask Map](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_anomali_harita_binary_mask.png)
-*Binary Mask → Harita · Threshold=0.35 üstü alan kırmızı · P2-P95 renk normalize*
+### v4.0 — İstatistik Paneli (X Dosyası)
+![İstatistik X](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/v4_istatistik_x_dosyasi_pinn.png)
+*İST modu · X_mag_grav · Ort: 0.109 · P90: 0.632 · >0.5 hücre: 3480/32768 · %11.3 fraksiyon*
 
 ### IP — Cole-Cole Pseudosection
 ![IP Panel](https://raw.githubusercontent.com/bilaltlc/geopinn-studio/main/docs/screenshots/ss_ip_panel.png)
